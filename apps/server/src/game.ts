@@ -9,16 +9,21 @@ import {
   scoreMove,
   shuffle,
   validatePlacement,
+  DEFAULT_SETTINGS,
   RACK_SIZE,
+  TIMER_PRESETS,
   type Board,
   type ChallengeState,
+  type ChatMessage,
   type EndReason,
+  type GameSettings,
   type GameStatus,
   type MoveRecordPublic,
   type NewTile,
   type PublicGameState,
   type PublicPlayer,
   type RackTile,
+  type SkipVote,
 } from '@scrabble/engine';
 
 export const MIN_PLAYERS = 2;
@@ -86,6 +91,16 @@ export class GameRoom {
   winner: number | null = null;
   endReason: EndReason | null = null;
 
+  /* ---- v2: settings, timer, vote, chat, ping ---- */
+  settings: GameSettings = { ...DEFAULT_SETTINGS };
+  turnEndsAt: number | null = null;
+  skipVote: SkipVote | null = null;
+  chatLog: ChatMessage[] = [];
+  private chatTimes = new Map<string, number>();
+  private pingLog = new Map<string, number[]>();
+  private turnTimer: ReturnType<typeof setTimeout> | null = null;
+  private timerSeq = 0;
+
   constructor(code: string, private dictionary: Set<string>, private emitter: Emitter) {
     this.code = code;
   }
@@ -94,7 +109,7 @@ export class GameRoom {
 
   addPlayer(name: string | undefined, socketId: string): ServerPlayer {
     if (this.status !== 'lobby') throw new GameError('that game has already started');
-    if (this.players.length >= MAX_PLAYERS) throw new GameError('room is full');
+    if (this.players.length >= this.settings.capacity) throw new GameError('room is full');
     const player: ServerPlayer = {
       id: randomUUID(),
       name: sanitizeName(name),
@@ -188,6 +203,7 @@ export class GameRoom {
     }
     this.status = 'playing';
     this.turn = Math.max(0, this.playerIdx(this.hostId));
+    this.scheduleTurnTimer();
     this.emitState();
   }
 
@@ -210,6 +226,158 @@ export class GameRoom {
     player.connected = true;
     player.disconnectedAt = 0;
     return player;
+  }
+
+  /* ------------------------------ settings ------------------------------ */
+
+  /** Host-only, lobby-only partial settings update. Fields are validated + clamped. */
+  updateSettings(playerId: string, patch: Partial<GameSettings>): void {
+    this.assertHost(playerId);
+    if (this.status !== 'lobby') throw new GameError('settings can only be changed in the lobby');
+    const next: GameSettings = { ...this.settings };
+    if (patch.capacity !== undefined) {
+      const c = patch.capacity;
+      if (!Number.isInteger(c) || c < MIN_PLAYERS || c > MAX_PLAYERS) {
+        throw new GameError('capacity must be between 2 and 6');
+      }
+      next.capacity = c;
+    }
+    if (patch.timerSeconds !== undefined) {
+      if (patch.timerSeconds !== null && !TIMER_PRESETS.includes(patch.timerSeconds)) {
+        throw new GameError('invalid timer duration');
+      }
+      next.timerSeconds = patch.timerSeconds;
+    }
+    if (patch.validationMode !== undefined) {
+      if (patch.validationMode !== 'challenge' && patch.validationMode !== 'validate') {
+        throw new GameError('invalid validation mode');
+      }
+      next.validationMode = patch.validationMode;
+    }
+    this.settings = next;
+    this.emitState();
+  }
+
+  /* ------------------------------ chat ------------------------------ */
+
+  /** Player chat. Throttled, capped at 200 chars, log capped at 100 messages. */
+  chat(playerId: string, rawText: string): ChatMessage {
+    const idx = this.playerIdx(playerId);
+    if (idx < 0) throw new GameError('not a player in this room');
+    const text = (rawText ?? '').trim().slice(0, 200);
+    if (!text) throw new GameError('nothing to send');
+    const now = Date.now();
+    const last = this.chatTimes.get(playerId) ?? 0;
+    if (now - last < 400) throw new GameError('sending messages too fast');
+    this.chatTimes.set(playerId, now);
+    const message: ChatMessage = { playerIdx: idx, name: this.players[idx].name, text, ts: now };
+    this.chatLog.push(message);
+    if (this.chatLog.length > 100) this.chatLog.splice(0, this.chatLog.length - 100);
+    return message;
+  }
+
+  recentChat(): ChatMessage[] {
+    return this.chatLog.slice(-100);
+  }
+
+  /* ------------------------------ ping ------------------------------ */
+
+  /** Nudge another player. Rate limited: max 3 per rolling 60s per sender. */
+  ping(senderId: string, targetIdx: number): { fromIdx: number; name: string } {
+    const senderIdx = this.playerIdx(senderId);
+    if (senderIdx < 0) throw new GameError('not a player in this room');
+    if (!Number.isInteger(targetIdx) || targetIdx < 0 || targetIdx >= this.players.length) {
+      throw new GameError('no such player');
+    }
+    if (targetIdx === senderIdx) throw new GameError('you cannot ping yourself');
+    const target = this.players[targetIdx];
+    if (target.resigned) throw new GameError('that player has resigned');
+    if (!target.connected) throw new GameError('that player is offline');
+    const now = Date.now();
+    const times = (this.pingLog.get(senderId) ?? []).filter((t) => now - t < 60_000);
+    if (times.length >= 3) throw new GameError('ping limit reached (3 per minute)');
+    times.push(now);
+    this.pingLog.set(senderId, times);
+    return { fromIdx: senderIdx, name: this.players[senderIdx].name };
+  }
+
+  /* ------------------------------ turn timer & vote ------------------------------ */
+
+  /** One authoritative timer per turn; a sequence token guards stale firings. */
+  private scheduleTurnTimer(): void {
+    this.clearTurnTimer();
+    this.skipVote = null;
+    if (this.status !== 'playing' || this.settings.timerSeconds == null || this.turn < 0) {
+      this.turnEndsAt = null;
+      return;
+    }
+    this.timerSeq += 1;
+    const seq = this.timerSeq;
+    const targetIdx = this.turn;
+    this.turnEndsAt = Date.now() + this.settings.timerSeconds * 1000;
+    this.turnTimer = setTimeout(() => {
+      if (this.timerSeq !== seq) return; // stale timer — a newer turn was scheduled
+      this.onTurnExpired(targetIdx);
+    }, this.settings.timerSeconds * 1000);
+  }
+
+  private clearTurnTimer(): void {
+    if (this.turnTimer) {
+      clearTimeout(this.turnTimer);
+      this.turnTimer = null;
+    }
+  }
+
+  /** Timer expiry never forces anything: it only opens a vote to skip. */
+  private onTurnExpired(targetIdx: number): void {
+    if (this.status !== 'playing' || this.turn !== targetIdx) return;
+    if (this.skipVote) return;
+    this.skipVote = { targetIdx, voters: [] };
+    this.emitState();
+  }
+
+  /**
+   * Vote to skip the overdue current turn. Threshold: majority of other active
+   * players (disconnected players count toward the denominator but cannot vote).
+   * Reaching the threshold force-passes the turn (scoreless, closes the
+   * challenge window) and re-arms the next turn's timer.
+   */
+  voteSkip(playerId: string): void {
+    if (this.status !== 'playing') throw new GameError('game not in progress');
+    const vote = this.skipVote;
+    if (!vote) throw new GameError('nothing to vote on right now');
+    const voterIdx = this.playerIdx(playerId);
+    if (voterIdx < 0) throw new GameError('not a player in this room');
+    if (voterIdx === vote.targetIdx) throw new GameError('you cannot vote to skip your own turn');
+    const voter = this.players[voterIdx];
+    if (voter.resigned) throw new GameError('resigned players cannot vote');
+    if (vote.voters.includes(voterIdx)) {
+      this.emitState();
+      return; // one vote each — idempotent
+    }
+    vote.voters.push(voterIdx);
+
+    const activeOthers = this.players.filter(
+      (p, i) => i !== vote.targetIdx && !p.resigned,
+    ).length;
+    const needed = Math.floor(activeOthers / 2) + 1;
+
+    if (vote.voters.length >= needed) {
+      const targetIdx = vote.targetIdx;
+      this.skipVote = null;
+      this.challenge = null; // a forced pass is a turn action: closes the window
+      this.moveSeq += 1;
+      this.history.push({
+        seq: this.moveSeq,
+        playerIdx: targetIdx,
+        kind: 'timeout',
+        note: 'skipped by vote',
+      });
+      this.passStreak += 1;
+      if (this.maybePassout()) return;
+      this.advanceTurn();
+    }
+    this.emitState();
   }
 
   /* ------------------------------ game flow ------------------------------ */
@@ -237,6 +405,7 @@ export class GameRoom {
     this.winner = null;
     this.endReason = null;
     this.status = 'playing';
+    this.scheduleTurnTimer();
     this.emitState();
   }
 
@@ -264,6 +433,14 @@ export class GameRoom {
     const v = validatePlacement(this.board, tiles);
     if (!v.ok) throw new GameError(v.reason);
     const { words, points } = scoreMove(this.board, tiles, v.axis);
+
+    // validate mode: dictionary check before any mutation (turn is NOT consumed)
+    if (this.settings.validationMode === 'validate') {
+      const invalid = words.filter((w) => !this.dictionary.has(w.text)).map((w) => w.text);
+      if (invalid.length > 0) {
+        throw new GameError(`not in the dictionary: ${invalid.join(', ')}`);
+      }
+    }
 
     const usedIds = new Set(usedRack.map((t) => t.id));
     player.rack = player.rack.filter((t) => !usedIds.has(t.id));
@@ -301,7 +478,9 @@ export class GameRoom {
       return;
     }
 
-    this.challenge = { open: true, moveSeq: this.moveSeq };
+    // in validate mode no challenge window ever opens
+    this.challenge =
+      this.settings.validationMode === 'validate' ? null : { open: true, moveSeq: this.moveSeq };
     this.advanceTurn();
     this.emitter.toRoom('move:committed', { record: this.history[this.history.length - 1] });
     this.emitState();
@@ -456,6 +635,9 @@ export class GameRoom {
     this.endReason = reason;
     this.challenge = null;
     this.turn = -1;
+    this.clearTurnTimer();
+    this.turnEndsAt = null;
+    this.skipVote = null;
     if (forcedWinner !== undefined) {
       this.winner = forcedWinner;
     } else {
@@ -498,6 +680,7 @@ export class GameRoom {
         continue;
       }
       this.turn = cursor;
+      this.scheduleTurnTimer();
       return;
     }
     this.endByResignation();
@@ -555,6 +738,9 @@ export class GameRoom {
       history: this.history,
       winner: this.winner,
       endReason: this.endReason,
+      settings: this.settings,
+      turnEndsAt: this.status === 'playing' ? this.turnEndsAt : null,
+      skipVote: this.skipVote,
     };
   }
 

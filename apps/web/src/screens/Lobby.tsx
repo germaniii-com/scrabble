@@ -1,5 +1,13 @@
+import type { GameSettings } from '@scrabble/engine';
+import { TIMER_PRESETS } from '@scrabble/engine';
 import { useGameStore } from '../store/gameStore';
 import { getSocket } from '../socket/client';
+
+const CAPACITIES = [2, 3, 4, 5, 6];
+
+function timerLabel(seconds: number | null): string {
+  return seconds == null ? 'Off' : `${seconds}s`;
+}
 
 export function Lobby() {
   const state = useGameStore((s) => s.state)!;
@@ -8,7 +16,12 @@ export function Lobby() {
   const resetToHome = useGameStore((s) => s.resetToHome);
 
   const isHost = state.hostId === myId;
+  const settings = state.settings;
   const canStart = state.players.length >= 2;
+
+  const update = (patch: Partial<GameSettings>) => {
+    getSocket().emit('settings:update', { settings: patch });
+  };
 
   const leave = () => {
     getSocket().emit('game:leave');
@@ -44,12 +57,90 @@ export function Lobby() {
           >
             {state.code}
           </button>
-          <p className="mt-2 text-sm text-stone-400">share this code with up to 5 friends</p>
+          <p className="mt-2 text-sm text-stone-400">
+            share this code with up to {settings.capacity - 1} friends
+          </p>
+        </div>
+
+        {/* ---- game settings ---- */}
+        <div className="rounded-2xl bg-stone-800 p-6 shadow-xl">
+          <p className="text-xs font-bold uppercase tracking-widest text-stone-400">Game settings</p>
+          {isHost ? (
+            <div className="mt-3 space-y-3 text-sm">
+              <label className="flex items-center justify-between gap-4">
+                <span className="font-bold">Seats</span>
+                <select
+                  value={settings.capacity}
+                  onChange={(e) => update({ capacity: Number(e.target.value) })}
+                  className="rounded-lg bg-stone-900 px-3 py-1.5 font-bold outline-none ring-amber-300 focus:ring-2"
+                >
+                  {CAPACITIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c} players
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center justify-between gap-4">
+                <span className="font-bold">
+                  Turn timer
+                  <span className="ml-1 font-normal text-stone-400">
+                    (expiry opens a vote to skip)
+                  </span>
+                </span>
+                <select
+                  value={settings.timerSeconds == null ? 'off' : settings.timerSeconds}
+                  onChange={(e) =>
+                    update({ timerSeconds: e.target.value === 'off' ? null : Number(e.target.value) })
+                  }
+                  className="rounded-lg bg-stone-900 px-3 py-1.5 font-bold outline-none ring-amber-300 focus:ring-2"
+                >
+                  {TIMER_PRESETS.map((t) => (
+                    <option key={String(t)} value={t == null ? 'off' : t}>
+                      {timerLabel(t)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex items-center justify-between gap-4">
+                <span className="font-bold">Word check</span>
+                <div className="flex overflow-hidden rounded-lg ring-1 ring-stone-600">
+                  <button
+                    onClick={() => update({ validationMode: 'challenge' })}
+                    className={`px-3 py-1.5 font-bold transition ${
+                      settings.validationMode === 'challenge'
+                        ? 'bg-amber-400 text-stone-900'
+                        : 'bg-stone-900 text-stone-300 hover:bg-stone-700'
+                    }`}
+                    title="no dictionary check at commit; opponents may challenge (double challenge)"
+                  >
+                    Challenge
+                  </button>
+                  <button
+                    onClick={() => update({ validationMode: 'validate' })}
+                    className={`px-3 py-1.5 font-bold transition ${
+                      settings.validationMode === 'validate'
+                        ? 'bg-amber-400 text-stone-900'
+                        : 'bg-stone-900 text-stone-300 hover:bg-stone-700'
+                    }`}
+                    title="invalid words are rejected when you play; no challenges"
+                  >
+                    Validate
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-3 rounded-lg bg-stone-900 px-3 py-2 text-sm text-stone-300">
+              {settings.capacity} seats · turn timer {timerLabel(settings.timerSeconds)} ·{' '}
+              {settings.validationMode === 'validate' ? 'dictionary-checked' : 'challenge rules'}
+            </p>
+          )}
         </div>
 
         <div className="rounded-2xl bg-stone-800 p-6 shadow-xl">
           <p className="text-xs font-bold uppercase tracking-widest text-stone-400">
-            Players ({state.players.length}/6)
+            Players ({state.players.length}/{settings.capacity})
           </p>
           <ul className="mt-3 space-y-2">
             {state.players.map((p) => (
@@ -67,14 +158,17 @@ export function Lobby() {
                 </span>
               </li>
             ))}
-            {Array.from({ length: Math.max(0, 6 - state.players.length) }, (_, i) => (
-              <li
-                key={`seat-${i}`}
-                className="rounded-lg border border-dashed border-stone-700 px-3 py-2 text-sm text-stone-600"
-              >
-                — open seat —
-              </li>
-            ))}
+            {Array.from(
+              { length: Math.max(0, settings.capacity - state.players.length) },
+              (_, i) => (
+                <li
+                  key={`seat-${i}`}
+                  className="rounded-lg border border-dashed border-stone-700 px-3 py-2 text-sm text-stone-600"
+                >
+                  — open seat —
+                </li>
+              ),
+            )}
           </ul>
         </div>
 

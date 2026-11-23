@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RackTile } from '@scrabble/engine';
 import {
   GameError,
@@ -275,5 +275,234 @@ describe('presence', () => {
     const back = room.reattach(p1.token, 'sX');
     expect(back?.id).toBe(p1.id);
     expect(room.publicState().players[1].connected).toBe(true);
+  });
+});
+
+/* ================= v2 features ================= */
+
+describe('game settings', () => {
+  it('is host-only and lobby-only', () => {
+    const room = new GameRoom('TEST', dict, noop);
+    room.addPlayer('A', 's0');
+    room.addPlayer('B', 's1');
+    expect(() => room.updateSettings(room.players[1].id, { capacity: 4 })).toThrow(/only the host/);
+    room.updateSettings(room.hostId, { capacity: 4 });
+    expect(room.settings.capacity).toBe(4);
+    room.start(room.hostId);
+    expect(() => room.updateSettings(room.hostId, { capacity: 5 })).toThrow(/lobby/);
+  });
+
+  it('validates field values', () => {
+    const room = new GameRoom('TEST', dict, noop);
+    room.addPlayer('A', 's0');
+    expect(() => room.updateSettings(room.hostId, { capacity: 1 })).toThrow(/capacity/);
+    expect(() => room.updateSettings(room.hostId, { capacity: 7 })).toThrow(/capacity/);
+    expect(() => room.updateSettings(room.hostId, { timerSeconds: 45 })).toThrow(/timer/);
+    expect(() => room.updateSettings(room.hostId, { timerSeconds: 60 })).not.toThrow();
+    expect(() =>
+      room.updateSettings(room.hostId, { validationMode: 'bogus' as never }),
+    ).toThrow(/validation/);
+    expect(() => room.updateSettings(room.hostId, { validationMode: 'validate' })).not.toThrow();
+    expect(room.settings.validationMode).toBe('validate');
+  });
+
+  it('enforces capacity at join; lowering it below the seated count only blocks new joins', () => {
+    const room = new GameRoom('TEST', dict, noop);
+    room.addPlayer('A', 's0');
+    room.addPlayer('B', 's1');
+    room.addPlayer('C', 's2');
+    room.updateSettings(room.hostId, { capacity: 3 });
+    expect(() => room.addPlayer('D', 's3')).toThrow(/room is full/);
+    room.updateSettings(room.hostId, { capacity: 2 });
+    expect(room.players.length).toBe(3); // seated players stay
+    room.start(room.hostId);
+    expect(room.publicState().status).toBe('playing');
+  });
+});
+
+describe('validate mode', () => {
+  it('rejects invalid words without consuming the turn, and never opens a challenge window', () => {
+    const room = mkRoom(3);
+    room.settings.validationMode = 'validate';
+
+    // opening CRAB is a real word — commits fine
+    room.players[0].rack = mkRack('CRABEEE');
+    room.submitMove(
+      room.players[0].id,
+      placementsFor(room.players[0].rack.slice(0, 4), [[7, 5], [7, 6], [7, 7], [7, 8]]),
+    );
+    let s = room.publicState();
+    expect(s.players[0].score).toBe(16);
+    expect(s.challenge).toBeNull();
+    expect(s.turn).toBe(1);
+
+    // the dubious RQI bounces with the word list, turn intact
+    room.players[1].rack = mkRack('QIEEEEE');
+    expect(() =>
+      room.submitMove(room.players[1].id, placementsFor(room.players[1].rack.slice(0, 2), [[8, 6], [9, 6]])),
+    ).toThrow(/not in the dictionary: RQI/);
+    s = room.publicState();
+    expect(s.turn).toBe(1);
+    expect(s.board.filter(Boolean).length).toBe(4);
+    expect(room.players[1].rack.length).toBe(7);
+
+    // a valid word commits normally
+    room.players[1].rack = mkRack('SEEEEEE');
+    room.submitMove(room.players[1].id, placementsFor(room.players[1].rack.slice(0, 1), [[7, 9]]));
+    s = room.publicState();
+    expect(s.players[1].score).toBe(9);
+    expect(s.challenge).toBeNull();
+    expect(() => room.challengeMove(room.players[2].id)).toThrow(/nothing to challenge/);
+  });
+});
+
+describe('turn timer & vote to skip', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function mkTimedRoom(seconds: number): GameRoom {
+    const room = new GameRoom('TEST', dict, noop);
+    for (let i = 0; i < 3; i++) room.addPlayer(`P${i}`, `s${i}`);
+    room.updateSettings(room.hostId, { timerSeconds: seconds });
+    room.start(room.hostId);
+    return room;
+  }
+
+  it('opens a vote on expiry (warn-only) and force-passes on majority', () => {
+    vi.useFakeTimers();
+    const room = mkTimedRoom(30);
+    expect(room.publicState().turnEndsAt).not.toBeNull();
+
+    vi.advanceTimersByTime(29_999);
+    expect(room.publicState().skipVote).toBeNull();
+    vi.advanceTimersByTime(1);
+    // expiry never forces: the target may still act
+    const expired = room.publicState();
+    expect(expired.skipVote?.targetIdx).toBe(0);
+    expect(expired.status).toBe('playing');
+    expect(expired.turn).toBe(0);
+
+    // 2 other active players -> majority is 2; one vote is not enough
+    room.voteSkip(room.players[1].id);
+    expect(room.publicState().skipVote?.voters).toEqual([1]);
+    expect(room.publicState().turn).toBe(0);
+
+    // the target votes on their own turn -> rejected
+    expect(() => room.voteSkip(room.players[0].id)).toThrow(/own turn/);
+
+    // second vote reaches majority -> forced timeout pass
+    room.voteSkip(room.players[2].id);
+    const s = room.publicState();
+    expect(s.skipVote).toBeNull();
+    expect(s.turn).toBe(1);
+    expect(s.history[s.history.length - 1]?.kind).toBe('timeout');
+    expect(s.turnEndsAt).not.toBeNull(); // next turn's timer armed
+  });
+
+  it('clears the vote when the overdue target acts', () => {
+    vi.useFakeTimers();
+    const room = mkTimedRoom(30);
+    vi.advanceTimersByTime(30_000);
+    expect(room.publicState().skipVote?.targetIdx).toBe(0);
+    room.pass(room.players[0].id);
+    const s = room.publicState();
+    expect(s.skipVote).toBeNull();
+    expect(s.turn).toBe(1);
+  });
+
+  it('a forced timeout pass closes the challenge window like any turn action', () => {
+    vi.useFakeTimers();
+    const room = mkTimedRoom(30);
+    room.players[0].rack = mkRack('CRABEEE');
+    room.submitMove(
+      room.players[0].id,
+      placementsFor(room.players[0].rack.slice(0, 4), [[7, 5], [7, 6], [7, 7], [7, 8]]),
+    );
+    expect(room.publicState().challenge?.open).toBe(true);
+    vi.advanceTimersByTime(30_000); // P1's turn expires
+    room.voteSkip(room.players[2].id);
+    room.voteSkip(room.players[0].id); // majority of P0+P2
+    const s = room.publicState();
+    expect(s.challenge).toBeNull(); // window closed by the forced pass
+    expect(s.turn).toBe(2);
+  });
+
+  it('ignores stale timer firings from previous turns', () => {
+    vi.useFakeTimers();
+    const room = mkTimedRoom(30);
+    vi.advanceTimersByTime(10_000);
+    room.pass(room.players[0].id); // turn moves on; a fresh timer is scheduled
+    // P0's old timer would fire at t=30s — the sequence guard must ignore it
+    vi.advanceTimersByTime(25_000);
+    expect(room.publicState().skipVote).toBeNull();
+    // P1's timer (scheduled at t=10) fires at t=40
+    vi.advanceTimersByTime(5_000);
+    expect(room.publicState().skipVote?.targetIdx).toBe(1);
+  });
+
+  it('no vote can open when the timer is off', () => {
+    vi.useFakeTimers();
+    const room = mkRoom(3); // untimed
+    vi.advanceTimersByTime(600_000);
+    expect(room.publicState().skipVote).toBeNull();
+    expect(room.publicState().turnEndsAt).toBeNull();
+    expect(() => room.voteSkip(room.players[1].id)).toThrow(/nothing to vote on/);
+  });
+});
+
+describe('chat', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('appends trimmed messages from room players', () => {
+    const room = mkRoom(2);
+    const msg = room.chat(room.players[0].id, '  hello world  ');
+    expect(msg.text).toBe('hello world');
+    expect(msg.name).toBe('P0');
+    expect(room.chatLog.length).toBe(1);
+    expect(() => room.chat('bogus-id', 'hi')).toThrow(/not a player/);
+    expect(() => room.chat(room.players[0].id, '   ')).toThrow(/nothing to send/);
+  });
+
+  it('throttles rapid messages per sender', () => {
+    const room = mkRoom(2);
+    room.chat(room.players[0].id, 'first');
+    expect(() => room.chat(room.players[0].id, 'second')).toThrow(/too fast/);
+    expect(() => room.chat(room.players[1].id, 'hi from P1')).not.toThrow();
+  });
+
+  it('caps the log at 100 messages (oldest trimmed)', () => {
+    vi.useFakeTimers();
+    const room = mkRoom(2);
+    for (let i = 0; i < 105; i++) {
+      room.chat(room.players[0].id, `m${i}`);
+      vi.advanceTimersByTime(500); // respect the throttle
+    }
+    expect(room.chatLog.length).toBe(100);
+    expect(room.chatLog[0].text).toBe('m5');
+    expect(room.recentChat().length).toBe(100);
+  });
+});
+
+describe('ping', () => {
+  it('rate limits to 3 per rolling minute per sender', () => {
+    const room = mkRoom(3);
+    const [a, b] = room.players;
+    room.ping(a.id, 1);
+    room.ping(a.id, 1);
+    room.ping(a.id, 1);
+    expect(() => room.ping(a.id, 1)).toThrow(/ping limit/);
+    expect(() => room.ping(b.id, 0)).not.toThrow(); // separate budget
+  });
+
+  it('rejects self-ping, offline and resigned targets', () => {
+    const room = mkRoom(3);
+    expect(() => room.ping(room.players[0].id, 0)).toThrow(/yourself/);
+    room.markDisconnected(room.players[1].id);
+    expect(() => room.ping(room.players[0].id, 1)).toThrow(/offline/);
+    room.resign(room.players[2].id);
+    expect(() => room.ping(room.players[0].id, 2)).toThrow(/resigned/);
   });
 });

@@ -1,7 +1,8 @@
 import { io, type Socket } from 'socket.io-client';
-import type { MoveRecordPublic, PublicGameState, RackTile } from '@scrabble/engine';
+import type { ChatMessage, MoveRecordPublic, PublicGameState, RackTile } from '@scrabble/engine';
 import { useGameStore, type ChallengeResolvedPayload } from '../store/gameStore';
 import { clearRoom, loadRoom } from '../storage';
+import { playPing } from '../sound';
 
 let socket: Socket | null = null;
 
@@ -37,6 +38,19 @@ function bind(socket: Socket): void {
 
   socket.on('challenge:resolved', (payload: ChallengeResolvedPayload) => {
     store.getState().onChallengeResolved(payload);
+  });
+
+  socket.on('chat:message', (msg: ChatMessage) => {
+    store.getState().onChatMessage(msg);
+  });
+
+  socket.on('chat:log', (msgs: ChatMessage[]) => {
+    store.getState().onChatLog(msgs ?? []);
+  });
+
+  socket.on('ping:received', ({ fromIdx, name }: { fromIdx: number; name: string }) => {
+    playPing();
+    store.getState().toast(`🔔 ${name} pinged you!`, 'info');
   });
 
   socket.on('move:committed', ({ record }: { record: MoveRecordPublic }) => {

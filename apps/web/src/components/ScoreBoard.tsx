@@ -1,20 +1,47 @@
+import { useEffect, useState } from 'react';
 import { useGameStore } from '../store/gameStore';
+import { getSocket } from '../socket/client';
+
+/** Ticking clock (only runs while a turn timer is active). */
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, [active]);
+  return now;
+}
+
+function formatClock(remainingMs: number): string {
+  const s = Math.max(0, Math.ceil(remainingMs / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
 
 export function ScoreBoard() {
   const state = useGameStore((s) => s.state)!;
   const myId = useGameStore((s) => s.myId);
+  const now = useNow(state.status === 'playing' && state.turnEndsAt != null);
+
+  const activeScores = state.players.filter((p) => !p.resigned).map((p) => p.score);
+  const topScore = activeScores.length > 0 ? Math.max(...activeScores) : 0;
+  const crowned = topScore > 0;
 
   return (
     <div className="rounded-2xl bg-stone-800 p-4 shadow">
       <div className="flex items-center justify-between">
         <p className="text-xs font-bold uppercase tracking-widest text-stone-400">
-          Players ({state.players.length}/6)
+          Players ({state.players.length}/{state.settings.capacity})
         </p>
         <p className="text-xs text-stone-400">bag: {state.bagCount}</p>
       </div>
       <ul className="mt-2 flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:gap-1 lg:overflow-visible lg:pb-0">
         {state.players.map((p, i) => {
           const isTurn = state.status === 'playing' && state.turn === i;
+          const leader = crowned && !p.resigned && p.score === topScore;
+          const canPing = p.id !== myId && p.connected && !p.resigned;
+          const remaining = isTurn && state.turnEndsAt != null ? state.turnEndsAt - now : null;
+          const urgent = remaining != null && remaining <= 10_000;
           return (
             <li
               key={p.id}
@@ -24,6 +51,7 @@ export function ScoreBoard() {
             >
               <span className="truncate font-bold">
                 {isTurn && <span className="mr-1">▶</span>}
+                {leader && <span title="highest score" className="mr-1">👑</span>}
                 {p.name}
                 {p.id === myId && <span className="ml-1 text-xs text-stone-400">(you)</span>}
                 {p.resigned && <span className="ml-1 text-xs text-red-400">resigned</span>}
@@ -34,7 +62,28 @@ export function ScoreBoard() {
                   <span className="ml-1 text-xs text-red-400">· offline</span>
                 )}
               </span>
-              <span className="font-mono font-bold tabular-nums text-amber-300">{p.score}</span>
+              <span className="flex items-center gap-1.5">
+                {canPing && (
+                  <button
+                    onClick={() => getSocket().emit('ping:send', { targetIdx: i })}
+                    title={`ping ${p.name}`}
+                    className="rounded px-1 text-xs text-stone-400 transition hover:bg-stone-700 hover:text-amber-300"
+                  >
+                    🔔
+                  </button>
+                )}
+                <span className="font-mono font-bold tabular-nums text-amber-300">{p.score}</span>
+                {remaining != null && (
+                  <span
+                    className={`font-mono text-xs tabular-nums ${
+                      urgent ? 'font-bold text-red-400' : 'text-stone-400'
+                    }`}
+                    title="turn timer"
+                  >
+                    {formatClock(remaining)}
+                  </span>
+                )}
+              </span>
             </li>
           );
         })}

@@ -3,7 +3,7 @@ import { createServer, type Server as HttpServer } from 'node:http';
 import { Server as SocketIoServer } from 'socket.io';
 import { io as ioc, type Socket as ClientSocket } from 'socket.io-client';
 import { attachGameServer } from '../src/events';
-import type { PublicGameState, RackTile } from '@scrabble/engine';
+import type { ChatMessage, PublicGameState, RackTile } from '@scrabble/engine';
 
 interface StatePayload {
   state: PublicGameState;
@@ -65,7 +65,7 @@ describe('server integration', () => {
 
   const stateOf = (c: ClientSocket): PublicGameState | undefined => last.get(c)?.state;
 
-  it('create -> join x2 -> start -> pass to a passout end, then rematch and reconnect', async () => {
+  it('settings, chat and ping ride along a full game', async () => {
     const alice = await connect();
     const created = await emitAck(alice, 'game:create', { name: 'Alice' });
     expect(created.ok).toBe(true);
@@ -78,38 +78,81 @@ describe('server integration', () => {
     const joinedCarol = await emitAck(carol, 'game:join', { code, name: 'Carol' });
     expect(joinedBob.ok).toBe(true);
     expect(joinedCarol.ok).toBe(true);
-
     await waitFor(() => (stateOf(alice)?.players.length === 3 ? true : undefined));
     expect(stateOf(alice)?.status).toBe('lobby');
 
-    // a bad room code is rejected
+    // ---- settings: host shrinks the room to 3 seats ----
+    alice.emit('settings:update', { settings: { capacity: 3 } });
+    await waitFor(() => (stateOf(alice)?.settings.capacity === 3 ? true : undefined));
+
     const dave = await connect();
-    const badJoin = await emitAck(dave, 'game:join', { code: 'ZZZZ', name: 'Dave' });
-    expect(badJoin.ok).toBe(false);
+    const fullJoin = await emitAck(dave, 'game:join', { code, name: 'Dave' });
+    expect(fullJoin.ok).toBe(false);
+    expect(fullJoin.reason).toMatch(/room is full/);
+
+    // non-host cannot change settings
+    const bobErrors: string[] = [];
+    bob.on('game:error', (p: { reason: string }) => bobErrors.push(p.reason));
+    bob.emit('settings:update', { settings: { capacity: 6 } });
+    await waitFor(() => (bobErrors.length > 0 ? true : undefined));
+    expect(bobErrors[0]).toMatch(/only the host/);
+    expect(stateOf(alice)?.settings.capacity).toBe(3);
+
+    // host grows the room again; dave fits now, then leaves before start.
+    // wait for the join to land BEFORE leaving — otherwise the "3 players"
+    // probe below can resolve on the stale pre-join state and race the leave.
+    alice.emit('settings:update', { settings: { capacity: 6, validationMode: 'validate' } });
+    await waitFor(() => (stateOf(alice)?.settings.validationMode === 'validate' ? true : undefined));
+    const daveJoin2 = await emitAck(dave, 'game:join', { code, name: 'Dave' });
+    expect(daveJoin2.ok).toBe(true);
+    await waitFor(() => (stateOf(alice)?.players.length === 4 ? true : undefined));
+    dave.emit('game:leave');
+    await waitFor(() => (stateOf(alice)?.players.length === 3 ? true : undefined));
     dave.disconnect();
 
-    // a non-host cannot start (their attempt is answered with game:error, state stays lobby)
-    const errors: string[] = [];
-    bob.on('game:error', (p: { reason: string }) => errors.push(p.reason));
+    // a non-host cannot start; the host can
     bob.emit('game:start');
-    await waitFor(() => (errors.length > 0 ? true : undefined));
-    expect(errors[0]).toMatch(/only the host/);
-    expect(stateOf(alice)?.status).toBe('lobby');
-
-    // the host can
+    await waitFor(() => (bobErrors.length > 1 ? true : undefined));
+    expect(bobErrors[1]).toMatch(/only the host/);
     alice.emit('game:start');
     await waitFor(() => (stateOf(alice)?.status === 'playing' ? true : undefined));
     expect(stateOf(alice)?.turn).toBe(0);
+    expect(stateOf(alice)?.players.length).toBe(3);
+    expect(stateOf(alice)?.settings.validationMode).toBe('validate');
+    expect(stateOf(alice)?.turnEndsAt).toBeNull(); // untimed game
 
     // every player got a private rack of 7
     expect(last.get(alice)?.rack.length).toBe(7);
     expect(last.get(bob)?.rack.length).toBe(7);
     expect(last.get(carol)?.rack.length).toBe(7);
-
-    // the public state never leaks racks
     expect(JSON.stringify(stateOf(alice))).not.toContain('"rack"');
 
-    // invalid move bounces back with a reason
+    // ---- chat: relays to the room ----
+    const chatSeen: ChatMessage[] = [];
+    carol.on('chat:message', (m: ChatMessage) => chatSeen.push(m));
+    bob.emit('chat:send', { text: '  good luck all!  ' });
+    await waitFor(() => (chatSeen.length > 0 ? true : undefined));
+    expect(chatSeen[0].text).toBe('good luck all!');
+    expect(chatSeen[0].name).toBe('Bob');
+
+    // ---- ping: targeted delivery + 3/min rate limit ----
+    const pings: { fromIdx: number; name: string }[] = [];
+    bob.on('ping:received', (p: { fromIdx: number; name: string }) => pings.push(p));
+    const aliceErrors: string[] = [];
+    alice.on('game:error', (p: { reason: string }) => aliceErrors.push(p.reason));
+    for (let i = 0; i < 3; i++) alice.emit('ping:send', { targetIdx: 1 });
+    await waitFor(() => (pings.length === 3 ? true : undefined));
+    expect(pings[0]).toEqual({ fromIdx: 0, name: 'Alice' });
+    // carol never sees alice's pings to bob
+    const carolPings: unknown[] = [];
+    carol.on('ping:received', (p: unknown) => carolPings.push(p));
+    alice.emit('ping:send', { targetIdx: 1 }); // 4th within the minute
+    await waitFor(() => (aliceErrors.length > 0 ? true : undefined));
+    expect(aliceErrors[0]).toMatch(/ping limit/);
+    await new Promise((r) => setTimeout(r, 150));
+    expect(carolPings.length).toBe(0);
+
+    // ---- validate mode: a bogus move bounces with a reason ----
     const rejected: string[] = [];
     alice.on('turn:rejected', (p: { reason: string }) => rejected.push(p.reason));
     alice.emit('turn:submitMove', { placements: [{ rackTileId: 'bogus', row: 7, col: 7 }] });
@@ -127,22 +170,28 @@ describe('server integration', () => {
     await waitFor(() => (stateOf(alice)?.status === 'ended' ? true : undefined));
     expect(stateOf(alice)?.endReason).toBe('passout');
     expect(stateOf(alice)?.challenge).toBeNull();
+    expect(stateOf(alice)?.skipVote).toBeNull();
 
-    // host rematch -> fresh game with the same seats
+    // host rematch -> fresh game with the same seats (chat log survives)
     alice.emit('game:rematch');
     await waitFor(() => (stateOf(alice)?.status === 'playing' ? true : undefined));
     expect(stateOf(alice)?.players.every((p) => p.score === 0)).toBe(true);
 
-    // bob drops and rejoins with his token
+    // ---- reconnect: bob drops and rejoins with his token ----
     const bobToken = joinedBob.token as string;
     bob.disconnect();
     await waitFor(() => (stateOf(alice)?.players[1].connected === false ? true : undefined));
 
     const bob2 = await connect();
+    const chatLogSeen: ChatMessage[] = [];
+    bob2.on('chat:log', (msgs: ChatMessage[]) => chatLogSeen.push(...msgs));
     const synced = await emitAck(bob2, 'sync:request', { code, token: bobToken });
     expect(synced.ok).toBe(true);
     await waitFor(() => (stateOf(alice)?.players[1].connected === true ? true : undefined));
     expect(last.get(bob2)?.rack.length).toBe(7);
+    // the reconnecting player gets the chat history replayed
+    await waitFor(() => (chatLogSeen.length > 0 ? true : undefined));
+    expect(chatLogSeen.some((m) => m.text === 'good luck all!')).toBe(true);
 
     // alice can also re-sync (idempotent)
     const resynced = await emitAck(alice, 'sync:request', { code, token: aliceToken });

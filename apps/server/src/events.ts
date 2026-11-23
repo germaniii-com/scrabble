@@ -1,4 +1,5 @@
 import type { Server, Socket } from 'socket.io';
+import type { GameSettings } from '@scrabble/engine';
 import {
   GameError,
   GameRoom,
@@ -14,6 +15,9 @@ interface SyncPayload { code?: string; token?: string }
 interface MovePayload { placements?: PlacementPayload[] }
 interface ExchangePayload { rackTileIds?: string[] }
 interface RemoveSeatPayload { playerId?: string }
+interface SettingsPayload { settings?: Partial<GameSettings> }
+interface ChatPayload { text?: string }
+interface PingPayload { targetIdx?: number }
 
 interface SocketCtx {
   room: GameRoom;
@@ -70,6 +74,7 @@ export function attachGameServer(io: Server, dictionary: Set<string>): void {
         socket.join(room.code);
         ack?.({ ok: true, code: room.code, token: player.token, playerId: player.id });
         room.emitState();
+        socket.emit('chat:log', room.recentChat());
         io.to(room.code).emit('player:joined', { playerId: player.id, name: player.name });
       } catch (e) {
         ack?.({ ok: false, reason: message(e) });
@@ -89,6 +94,7 @@ export function attachGameServer(io: Server, dictionary: Set<string>): void {
       socket.join(room.code);
       ack?.({ ok: true, playerId: player.id });
       room.emitState();
+      socket.emit('chat:log', room.recentChat());
       io.to(room.code).emit('player:reconnected', { playerId: player.id, name: player.name });
     });
 
@@ -97,6 +103,52 @@ export function attachGameServer(io: Server, dictionary: Set<string>): void {
       if (!ctx) return;
       try {
         ctx.room.start(ctx.playerId);
+      } catch (e) {
+        socket.emit('game:error', { reason: message(e) });
+      }
+    });
+
+    socket.on('settings:update', (data: SettingsPayload) => {
+      const ctx = ctxOf();
+      if (!ctx) return;
+      try {
+        ctx.room.updateSettings(ctx.playerId, data?.settings ?? {});
+      } catch (e) {
+        socket.emit('game:error', { reason: message(e) });
+      }
+    });
+
+    socket.on('chat:send', (data: ChatPayload) => {
+      const ctx = ctxOf();
+      if (!ctx) return;
+      try {
+        const msg = ctx.room.chat(ctx.playerId, data?.text ?? '');
+        io.to(ctx.room.code).emit('chat:message', msg);
+      } catch (e) {
+        socket.emit('game:error', { reason: message(e) });
+      }
+    });
+
+    socket.on('ping:send', (data: PingPayload) => {
+      const ctx = ctxOf();
+      if (!ctx) return;
+      try {
+        const targetIdx = data?.targetIdx ?? -1;
+        const ping = ctx.room.ping(ctx.playerId, targetIdx);
+        const target = ctx.room.players[targetIdx];
+        if (target?.socketId) {
+          io.to(target.socketId).emit('ping:received', ping);
+        }
+      } catch (e) {
+        socket.emit('game:error', { reason: message(e) });
+      }
+    });
+
+    socket.on('turn:voteSkip', () => {
+      const ctx = ctxOf();
+      if (!ctx) return;
+      try {
+        ctx.room.voteSkip(ctx.playerId);
       } catch (e) {
         socket.emit('game:error', { reason: message(e) });
       }

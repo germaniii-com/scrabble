@@ -20,12 +20,22 @@ interface RackProps {
 export function Rack(props: RackProps) {
   const rack = useGameStore((s) => s.rack);
   const provisional = useGameStore((s) => s.provisional);
+  const rackOrder = useGameStore((s) => s.rackOrder);
   const selectedRackTileId = useGameStore((s) => s.selectedRackTileId);
   const selectRackTile = useGameStore((s) => s.selectRackTile);
+  const shuffleRack = useGameStore((s) => s.shuffleRack);
   const submitting = useGameStore((s) => s.submitting);
 
   const provIds = new Set(provisional.map((p) => p.rackTileId));
-  const shown = rack.filter((t) => !provIds.has(t.id));
+  const shownRaw = rack.filter((t) => !provIds.has(t.id));
+  // apply the local shuffle order, if any (unknown ids keep their natural position)
+  const shown = rackOrder
+    ? [...shownRaw].sort((a, b) => {
+        const ia = rackOrder.indexOf(a.id);
+        const ib = rackOrder.indexOf(b.id);
+        return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+      })
+    : shownRaw;
   const emptySlots = Math.max(0, 7 - shown.length);
 
   const { preview, myTurn, exchangeMode, exchangeIds, bagCount } = props;
@@ -58,6 +68,13 @@ export function Rack(props: RackProps) {
         {Array.from({ length: emptySlots }, (_, i) => (
           <div key={i} className="h-12 w-12 rounded-md border border-dashed border-stone-600 opacity-40" />
         ))}
+        <button
+          onClick={shuffleRack}
+          title="shuffle rack (display only)"
+          className="ml-1 rounded-md bg-stone-800 px-3 py-2 text-lg font-bold text-stone-300 hover:bg-stone-700"
+        >
+          ⇄
+        </button>
       </div>
 
       <div className="flex flex-wrap items-center justify-center gap-2 text-sm">
@@ -116,7 +133,7 @@ export function Rack(props: RackProps) {
         )}
         {myTurn && preview === null && (
           <span className="text-stone-400">
-            click a tile, then a square — click a placed tile to take it back
+            click a tile then a square, or click a square and type — Enter plays, Esc clears
           </span>
         )}
         {myTurn && preview && !preview.ok && <span className="text-red-400">{preview.reason}</span>}

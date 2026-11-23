@@ -63,7 +63,7 @@ export type EndReason = 'playout' | 'passout' | 'resignation';
 export interface MoveRecordPublic {
   seq: number;
   playerIdx: number;
-  kind: 'move' | 'exchange' | 'pass' | 'resign' | 'skip' | 'challenge';
+  kind: 'move' | 'exchange' | 'pass' | 'resign' | 'skip' | 'challenge' | 'timeout';
   /** for kind === 'move' */
   words?: { text: string; points: number }[];
   points?: number;
@@ -76,6 +76,38 @@ export interface MoveRecordPublic {
 export interface ChallengeState {
   open: boolean;
   moveSeq: number;
+}
+
+/** Host-configurable room settings (set in the lobby, applied at start). */
+export interface GameSettings {
+  /** seat capacity: 2..6 */
+  capacity: number;
+  /** per-turn timer in seconds; null = untimed */
+  timerSeconds: number | null;
+  /** 'challenge' = classic rules; 'validate' = dictionary-checked at commit, no challenges */
+  validationMode: 'challenge' | 'validate';
+}
+
+export const DEFAULT_SETTINGS: GameSettings = {
+  capacity: 6,
+  timerSeconds: null,
+  validationMode: 'challenge',
+};
+
+export const TIMER_PRESETS: (number | null)[] = [null, 30, 60, 90, 120];
+
+/** A player chat message (room-level social log, capped server-side). */
+export interface ChatMessage {
+  playerIdx: number;
+  name: string;
+  text: string;
+  ts: number;
+}
+
+/** Open vote to skip an overdue turn (created when the timer expires). */
+export interface SkipVote {
+  targetIdx: number;
+  voters: number[];
 }
 
 export interface PublicGameState {
@@ -93,4 +125,8 @@ export interface PublicGameState {
   history: MoveRecordPublic[];
   winner: number | null;
   endReason: EndReason | null;
+  settings: GameSettings;
+  /** epoch ms when the current turn's timer expires; null = untimed / not playing */
+  turnEndsAt: number | null;
+  skipVote: SkipVote | null;
 }
