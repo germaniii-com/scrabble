@@ -41,7 +41,7 @@ export function Rack(props: RackProps) {
   const { preview, myTurn, exchangeMode, exchangeIds, bagCount } = props;
 
   return (
-    <div className="space-y-3">
+    <div className="shrink-0 space-y-3">
       <div className="flex flex-wrap items-center justify-center gap-2">
         {shown.map((t) => {
           const selected = selectedRackTileId === t.id;

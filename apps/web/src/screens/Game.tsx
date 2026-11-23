@@ -117,8 +117,8 @@ export function Game() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-stone-900 text-stone-100">
-      <header className="mx-auto flex max-w-[85rem] flex-wrap items-center justify-between gap-2 px-4 py-3">
+    <div className="flex h-screen flex-col overflow-hidden bg-stone-900 text-stone-100">
+      <header className="mx-auto flex w-full shrink-0 flex-wrap items-center justify-between gap-2 px-4 py-3 lg:max-w-[85rem]">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-black tracking-tight">
             SCRABBLE <span className="text-amber-300">ONLINE</span>
@@ -167,18 +167,24 @@ export function Game() {
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-[85rem] flex-col gap-4 px-4 pb-8 lg:flex-row">
-        <aside className="order-1 space-y-3 lg:w-56 lg:shrink-0">
+      {/* fixed app shell: on lg everything fits the viewport; lists scroll internally.
+          on small screens the column scrolls inside the shell (header stays pinned). */}
+      <div className="mx-auto flex min-h-0 w-full max-w-[85rem] flex-1 flex-col gap-4 overflow-y-auto p-4 lg:flex-row lg:overflow-hidden">
+        {/* left: players + history */}
+        <aside className="order-1 flex shrink-0 flex-col gap-3 lg:w-56 lg:min-h-0">
           <ScoreBoard />
-          <div className="hidden lg:block">
+          <div className="hidden lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
             <History />
           </div>
         </aside>
 
-        <main className="order-2 min-w-0 flex-1 space-y-3">
+        {/* center: vote/challenge bars, board, rack */}
+        <main className="order-2 flex min-w-0 shrink-0 flex-col gap-3 lg:min-h-0 lg:flex-1">
           <VoteBar />
           <ChallengeBar />
-          <Board />
+          <div className="flex min-h-0 flex-1 items-center justify-center">
+            <Board />
+          </div>
           <Rack
             preview={preview}
             myTurn={myTurn}
@@ -198,10 +204,9 @@ export function Game() {
           </div>
         </main>
 
-        <aside className="order-3 hidden lg:flex lg:w-80 lg:shrink-0">
-          <div className="sticky top-4 h-[calc(100vh-2rem)] w-full">
-            <ChatPanel embedded />
-          </div>
+        {/* right: chat fills the column height and scrolls internally */}
+        <aside className="order-3 hidden w-80 shrink-0 lg:flex lg:min-h-0 lg:flex-col">
+          <ChatPanel embedded />
         </aside>
       </div>
 

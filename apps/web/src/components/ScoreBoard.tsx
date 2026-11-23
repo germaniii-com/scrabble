@@ -28,7 +28,7 @@ export function ScoreBoard() {
   const crowned = topScore > 0;
 
   return (
-    <div className="rounded-2xl bg-stone-800 p-4 shadow">
+    <div className="shrink-0 rounded-2xl bg-stone-800 p-4 shadow">
       <div className="flex items-center justify-between">
         <p className="text-xs font-bold uppercase tracking-widest text-stone-400">
           Players ({state.players.length}/{state.settings.capacity})

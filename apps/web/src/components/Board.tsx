@@ -17,7 +17,7 @@ export function Board() {
   );
 
   return (
-    <div className="mx-auto grid aspect-square w-full max-w-[560px] grid-cols-[repeat(15,minmax(0,1fr))] overflow-hidden rounded-lg shadow-2xl ring-2 ring-stone-700">
+    <div className="mx-auto grid aspect-square w-full max-w-[560px] grid-cols-[repeat(15,minmax(0,1fr))] overflow-hidden rounded-lg shadow-2xl ring-2 ring-stone-700 lg:h-full lg:w-auto lg:max-h-[560px] lg:max-w-none">
       {Array.from({ length: CELLS }, (_, i) => {
         const row = Math.floor(i / BOARD_SIZE);
         const col = i % BOARD_SIZE;

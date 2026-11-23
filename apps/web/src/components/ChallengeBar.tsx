@@ -28,7 +28,7 @@ export function ChallengeBar() {
     return (
       <button
         onClick={showChallenge}
-        className="w-full rounded-lg bg-red-900/50 px-4 py-1.5 text-left text-sm font-bold text-red-200 ring-1 ring-red-500/50 hover:bg-red-900/80"
+        className="w-full shrink-0 rounded-lg bg-red-900/50 px-4 py-1.5 text-left text-sm font-bold text-red-200 ring-1 ring-red-500/50 hover:bg-red-900/80"
         title="show the challenge banner"
       >
         ⚔ challenge window open — {isMover ? 'your move' : `${mover?.name}'s move`} can still be
@@ -39,7 +39,7 @@ export function ChallengeBar() {
 
   return (
     <div
-      className={`rounded-xl p-4 shadow-lg ${
+      className={`shrink-0 rounded-xl p-4 shadow-lg ${
         isMover ? 'bg-stone-800' : 'bg-gradient-to-r from-red-900 to-red-700 ring-2 ring-red-400'
       }`}
     >

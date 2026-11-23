@@ -57,11 +57,11 @@ export function History() {
   }, [records.length]);
 
   return (
-    <div className="rounded-2xl bg-stone-800 p-4 shadow">
-      <p className="text-xs font-bold uppercase tracking-widest text-stone-400">History</p>
+    <div className="flex min-h-0 flex-1 flex-col rounded-2xl bg-stone-800 p-4 shadow">
+      <p className="shrink-0 text-xs font-bold uppercase tracking-widest text-stone-400">History</p>
       <ul
         ref={listRef}
-        className="mt-2 max-h-72 space-y-1.5 overflow-y-auto pr-1 text-sm lg:max-h-[26rem]"
+        className="mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1 text-sm max-h-72 lg:max-h-none"
       >
         {records.length === 0 && <li className="text-stone-500">no moves yet</li>}
         {records.map((r) => {

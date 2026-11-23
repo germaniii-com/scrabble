@@ -17,7 +17,7 @@ export function VoteBar() {
   const voted = myIdx >= 0 && vote.voters.includes(myIdx);
 
   return (
-    <div className="rounded-xl bg-orange-900/60 p-4 shadow-lg ring-1 ring-orange-500">
+    <div className="shrink-0 rounded-xl bg-orange-900/60 p-4 shadow-lg ring-1 ring-orange-500">
       {iAmTarget ? (
         <p className="font-bold text-orange-100">
           ⏱ time's up — you can still play, but others may vote to skip your turn
