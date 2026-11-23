@@ -1,4 +1,15 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  pointerWithin,
+  useSensor,
+  useSensors,
+  type CollisionDetection,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
 import { useGameStore, isMyTurn } from '../store/gameStore';
 import { computePreview } from '../preview';
 import { getSocket } from '../socket/client';
@@ -10,6 +21,7 @@ import { History } from '../components/History';
 import { ChatPanel } from '../components/ChatPanel';
 import { VoteBar } from '../components/VoteBar';
 import { BlankPicker } from '../components/BlankPicker';
+import { TileFace } from '../components/TileFace';
 
 export function Game() {
   const state = useGameStore((s) => s.state)!;
@@ -60,6 +72,53 @@ export function Game() {
   const confirmExchange = () => {
     getSocket().emit('turn:exchange', { rackTileIds: exchangeIds });
     clearExchange();
+  };
+
+  /* ---- drag & drop (coexists with click-to-place and typing) ---- */
+  const [activeDrag, setActiveDrag] = useState<{
+    letter: string;
+    isBlank: boolean;
+  } | null>(null);
+  // clicks stay clicks: drags only activate after 6px of pointer movement
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  const onDragStart = (event: DragStartEvent) => {
+    const id = String(event.active.id);
+    const st = useGameStore.getState();
+    const tileId = id.slice(id.indexOf(':') + 1);
+    if (id.startsWith('rack:')) {
+      const tile = st.rack.find((t) => t.id === tileId);
+      if (tile) {
+        setActiveDrag({ letter: tile.letter ?? '␣', isBlank: tile.letter === null });
+      }
+    } else if (id.startsWith('prov:')) {
+      const prov = st.provisional.find((p) => p.rackTileId === tileId);
+      if (prov) setActiveDrag({ letter: prov.letter, isBlank: prov.isBlank });
+    }
+  };
+
+  const onDragEnd = (event: DragEndEvent) => {
+    setActiveDrag(null);
+    const st = useGameStore.getState();
+    const activeId = String(event.active.id);
+    const overId = event.over ? String(event.over.id) : null;
+    const kind = activeId.slice(0, activeId.indexOf(':'));
+    const tileId = activeId.slice(activeId.indexOf(':') + 1);
+
+    if (kind === 'rack') {
+      if (overId?.startsWith('sq:')) {
+        const [, r, c] = overId.split(':');
+        st.placeRackTile(tileId, Number(r), Number(c));
+      }
+    } else if (kind === 'prov') {
+      if (overId === 'rack' || overId == null) {
+        // dropped back on the rack (or off the board): the tile returns
+        st.removeProvisionalById(tileId);
+      } else if (overId.startsWith('sq:')) {
+        const [, r, c] = overId.split(':');
+        st.moveProvisional(tileId, Number(r), Number(c));
+      }
+    }
   };
 
   // typeable board input: letters place tiles at the cursor; Enter plays; Esc clears.
@@ -180,25 +239,37 @@ export function Game() {
 
         {/* center: vote/challenge bars, board, rack */}
         <main className="order-2 flex min-w-0 shrink-0 flex-col gap-3 lg:min-h-0 lg:flex-1">
-          <VoteBar />
-          <ChallengeBar />
-          <div className="flex min-h-0 flex-1 items-center justify-center">
-            <Board />
-          </div>
-          <Rack
-            preview={preview}
-            myTurn={myTurn}
-            currentName={currentName}
-            exchangeMode={exchangeMode}
-            exchangeIds={exchangeIds}
-            bagCount={state.bagCount}
-            onPlay={play}
-            onPass={pass}
-            onToggleExchange={() => setExchangeMode(!exchangeMode)}
-            onToggleTile={toggleExchangeTile}
-            onConfirmExchange={confirmExchange}
-            onCancelExchange={clearExchange}
-          />
+          <DndContext
+            sensors={sensors}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            collisionDetection={pointerWithin as CollisionDetection}
+          >
+            <VoteBar />
+            <ChallengeBar />
+            <div className="flex min-h-0 flex-1 items-center justify-center">
+              <Board />
+            </div>
+            <Rack
+              preview={preview}
+              myTurn={myTurn}
+              currentName={currentName}
+              exchangeMode={exchangeMode}
+              exchangeIds={exchangeIds}
+              bagCount={state.bagCount}
+              onPlay={play}
+              onPass={pass}
+              onToggleExchange={() => setExchangeMode(!exchangeMode)}
+              onToggleTile={toggleExchangeTile}
+              onConfirmExchange={confirmExchange}
+              onCancelExchange={clearExchange}
+            />
+            <DragOverlay>
+              {activeDrag ? (
+                <TileFace letter={activeDrag.letter} isBlank={activeDrag.isBlank} />
+              ) : null}
+            </DragOverlay>
+          </DndContext>
           <div className="lg:hidden">
             <History />
           </div>

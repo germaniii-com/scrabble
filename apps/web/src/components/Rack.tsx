@@ -1,4 +1,5 @@
-import { letterValue } from '@scrabble/engine';
+import { useDraggable, useDroppable } from '@dnd-kit/core';
+import { letterValue, type RackTile } from '@scrabble/engine';
 import { useGameStore } from '../store/gameStore';
 import type { Preview } from '../preview';
 
@@ -15,6 +16,67 @@ interface RackProps {
   onToggleTile: (id: string) => void;
   onConfirmExchange: () => void;
   onCancelExchange: () => void;
+}
+
+/** A single rack tile: click to select (or mark for exchange), drag onto the board. */
+function RackTileButton({
+  tile,
+  selected,
+  exchanging,
+  draggable,
+  exchangeMode,
+  onSelect,
+  onToggleExchange,
+}: {
+  tile: RackTile;
+  selected: boolean;
+  exchanging: boolean;
+  draggable: boolean;
+  exchangeMode: boolean;
+  onSelect: (id: string | null) => void;
+  onToggleExchange: (id: string) => void;
+}) {
+  const { listeners, setNodeRef, isDragging } = useDraggable({
+    id: `rack:${tile.id}`,
+    disabled: !draggable,
+  });
+  return (
+    <button
+      ref={setNodeRef}
+      {...listeners}
+      style={{ touchAction: 'none' }}
+      onClick={() =>
+        exchangeMode ? onToggleExchange(tile.id) : onSelect(selected ? null : tile.id)
+      }
+      className={`relative h-12 w-12 rounded-md bg-gradient-to-b from-amber-100 to-amber-300 font-extrabold text-stone-900 shadow-md transition ${
+        selected ? 'ring-4 ring-emerald-400' : ''
+      } ${exchanging ? 'ring-4 ring-red-500' : ''} ${!draggable ? 'opacity-60' : ''} ${
+        isDragging ? 'opacity-30' : ''
+      }`}
+    >
+      {tile.letter ?? <span className="text-stone-500">␣</span>}
+      {tile.letter != null && (
+        <span className="absolute bottom-0 right-1 text-[10px] font-bold">
+          {letterValue(tile.letter)}
+        </span>
+      )}
+    </button>
+  );
+}
+
+/** The rack row doubles as the drop zone for dragging provisional tiles back. */
+function RackZone({ children }: { children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: 'rack' });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex flex-wrap items-center justify-center gap-2 rounded-xl p-1 ${
+        isOver ? 'ring-2 ring-amber-400' : ''
+      }`}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function Rack(props: RackProps) {
@@ -42,29 +104,19 @@ export function Rack(props: RackProps) {
 
   return (
     <div className="shrink-0 space-y-3">
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        {shown.map((t) => {
-          const selected = selectedRackTileId === t.id;
-          const exchanging = exchangeIds.includes(t.id);
-          return (
-            <button
-              key={t.id}
-              onClick={() =>
-                exchangeMode ? props.onToggleTile(t.id) : selectRackTile(selected ? null : t.id)
-              }
-              className={`relative h-12 w-12 rounded-md bg-gradient-to-b from-amber-100 to-amber-300 font-extrabold text-stone-900 shadow-md transition ${
-                selected ? 'ring-4 ring-emerald-400' : ''
-              } ${exchanging ? 'ring-4 ring-red-500' : ''} ${!myTurn ? 'opacity-60' : ''}`}
-            >
-              {t.letter ?? <span className="text-stone-500">␣</span>}
-              {t.letter != null && (
-                <span className="absolute bottom-0 right-1 text-[10px] font-bold">
-                  {letterValue(t.letter)}
-                </span>
-              )}
-            </button>
-          );
-        })}
+      <RackZone>
+        {shown.map((t) => (
+          <RackTileButton
+            key={t.id}
+            tile={t}
+            selected={selectedRackTileId === t.id}
+            exchanging={exchangeIds.includes(t.id)}
+            draggable={myTurn && !exchangeMode}
+            exchangeMode={exchangeMode}
+            onSelect={selectRackTile}
+            onToggleExchange={props.onToggleTile}
+          />
+        ))}
         {Array.from({ length: emptySlots }, (_, i) => (
           <div key={i} className="h-12 w-12 rounded-md border border-dashed border-stone-600 opacity-40" />
         ))}
@@ -75,7 +127,7 @@ export function Rack(props: RackProps) {
         >
           ⇄
         </button>
-      </div>
+      </RackZone>
 
       <div className="flex flex-wrap items-center justify-center gap-2 text-sm">
         {!exchangeMode && (
@@ -133,7 +185,7 @@ export function Rack(props: RackProps) {
         )}
         {myTurn && preview === null && (
           <span className="text-stone-400">
-            click a tile then a square, or click a square and type — Enter plays, Esc clears
+            click a tile then a square, drag it, or click a square and type — Enter plays, Esc clears
           </span>
         )}
         {myTurn && preview && !preview.ok && <span className="text-red-400">{preview.reason}</span>}

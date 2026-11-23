@@ -74,6 +74,12 @@ interface GameStore {
 
   selectRackTile: (id: string | null) => void;
   boardClick: (row: number, col: number) => void;
+  /** shared by click-to-place and drag-and-drop: place a specific rack tile */
+  placeRackTile: (rackTileId: string, row: number, col: number) => void;
+  /** move an already-placed provisional tile to another empty square */
+  moveProvisional: (rackTileId: string, toRow: number, toCol: number) => void;
+  /** take a provisional tile back to the rack */
+  removeProvisionalById: (rackTileId: string) => void;
   typeLetter: (letter: string) => void;
   backspace: () => void;
   moveCursor: (dr: number, dc: number) => void;
@@ -244,10 +250,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
     // clicking a provisional tile takes it back to the rack
     const provAt = st.provisional.find((p) => p.row === row && p.col === col);
     if (provAt) {
-      set({
-        provisional: st.provisional.filter((p) => p !== provAt),
-        selectedRackTileId: null,
-      });
+      get().removeProvisionalById(provAt.rackTileId);
       return;
     }
     if (state.board[row * BOARD_SIZE + col]) return;
@@ -255,20 +258,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
     // a selected rack tile places directly (classic click-to-place)
     const selectedId = st.selectedRackTileId;
     if (selectedId) {
-      const tile = st.rack.find((t) => t.id === selectedId);
-      if (!tile) return;
-      if (tile.letter === null) {
-        set({ blankPicker: { rackTileId: tile.id, row, col }, selectedRackTileId: null });
-        return;
-      }
-      set({
-        provisional: [
-          ...st.provisional,
-          { rackTileId: tile.id, row, col, letter: tile.letter, isBlank: false },
-        ],
-        selectedRackTileId: null,
-        cursor: null,
-      });
+      get().placeRackTile(selectedId, row, col);
       return;
     }
 
@@ -278,6 +268,65 @@ export const useGameStore = create<GameStore>()((set, get) => ({
     } else {
       set({ cursor: { row, col } });
     }
+  },
+
+  /** Place a specific rack tile at an empty square (blank opens the picker). */
+  placeRackTile: (rackTileId, row, col) => {
+    const st = get();
+    const state = st.state;
+    if (!state || state.status !== 'playing') return;
+    const myIdx = state.players.findIndex((p) => p.id === st.myId);
+    if (myIdx !== state.turn) return;
+    const i = row * BOARD_SIZE + col;
+    if (state.board[i]) return;
+    if (st.provisional.some((p) => p.row === row && p.col === col)) return;
+    const provIds = new Set(st.provisional.map((p) => p.rackTileId));
+    if (provIds.has(rackTileId)) return; // already on the board
+    const tile = st.rack.find((t) => t.id === rackTileId);
+    if (!tile) return;
+    if (tile.letter === null) {
+      set({ blankPicker: { rackTileId, row, col }, selectedRackTileId: null });
+      return;
+    }
+    set({
+      provisional: [
+        ...st.provisional,
+        { rackTileId, row, col, letter: tile.letter, isBlank: false },
+      ],
+      selectedRackTileId: null,
+      cursor: null,
+    });
+  },
+
+  /** Move a provisional tile to another empty square. */
+  moveProvisional: (rackTileId, toRow, toCol) => {
+    const st = get();
+    const state = st.state;
+    if (!state || state.status !== 'playing') return;
+    const myIdx = state.players.findIndex((p) => p.id === st.myId);
+    if (myIdx !== state.turn) return;
+    const prov = st.provisional.find((p) => p.rackTileId === rackTileId);
+    if (!prov) return;
+    if (prov.row === toRow && prov.col === toCol) return;
+    const i = toRow * BOARD_SIZE + toCol;
+    if (state.board[i]) return;
+    if (st.provisional.some((p) => p.row === toRow && p.col === toCol && p.rackTileId !== rackTileId)) {
+      return;
+    }
+    set({
+      provisional: st.provisional.map((p) =>
+        p.rackTileId === rackTileId ? { ...p, row: toRow, col: toCol } : p,
+      ),
+      selectedRackTileId: null,
+    });
+  },
+
+  /** Take a provisional tile back to the rack. */
+  removeProvisionalById: (rackTileId) => {
+    set((st) => ({
+      provisional: st.provisional.filter((p) => p.rackTileId !== rackTileId),
+      selectedRackTileId: null,
+    }));
   },
 
   /** Typeable input: place a matching rack tile (or auto-assign a blank) at the cursor. */
