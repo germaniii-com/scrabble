@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+/* ---- board squares ---- */
+.sq {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(60, 40, 20, 0.25);
+  font-size: clamp(7px, 1.4vw, 10px);
+  font-weight: 700;
+  user-select: none;
+}
+.sq-plain { background-color: #cfe0b8; }
+.sq-TW { background-color: #c43c3c; color: #fff; }
+.sq-DW { background-color: #eda3a3; color: #7a2020; }
+.sq-TL { background-color: #2b64b5; color: #fff; }
+.sq-DL { background-color: #a8cbef; color: #1e3f66; }
+
+/* ---- tiles ---- */
+.tile {
+  position: absolute;
+  inset: 4%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, #f6e6c4, #e6cfa0);
+  color: #3a2a15;
+  border-radius: 8%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  font-size: clamp(10px, 2.4vw, 17px);
+  font-weight: 800;
+  cursor: pointer;
+}
+.tile-prov {
+  outline: 3px solid #22c55e;
+  outline-offset: -2px;
+}
+.tile-blank {
+  font-style: italic;
+  text-decoration: underline;
+}
+.tile-value {
+  position: absolute;
+  right: 6%;
+  bottom: 2%;
+  font-size: 0.42em;
+  font-weight: 700;
+}
