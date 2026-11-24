@@ -2,6 +2,7 @@ import type { GameSettings } from '@scrabble/engine';
 import { TIMER_PRESETS } from '@scrabble/engine';
 import { useGameStore } from '../store/gameStore';
 import { getSocket } from '../socket/client';
+import { copyText } from '../clipboard';
 
 const CAPACITIES = [2, 3, 4, 5, 6];
 
@@ -29,9 +30,8 @@ export function Lobby() {
   };
 
   const copyCode = () => {
-    navigator.clipboard?.writeText(state.code).then(
-      () => toast('code copied', 'good'),
-      () => toast('could not copy', 'bad'),
+    copyText(state.code).then((ok) =>
+      toast(ok ? 'room code copied!' : 'could not copy', ok ? 'good' : 'bad'),
     );
   };
 
@@ -58,7 +58,7 @@ export function Lobby() {
             {state.code}
           </button>
           <p className="mt-2 text-sm text-stone-400">
-            share this code with up to {settings.capacity - 1} friends
+            click the code to copy it — share with up to {settings.capacity - 1} friends
           </p>
         </div>
 

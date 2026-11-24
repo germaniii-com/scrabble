@@ -18,6 +18,9 @@ authoritative Socket.IO server, and a shared TypeScript rules engine.
   reconnect, survives rematch
 - **Pings** — bell icon beside any opponent's name nudges them (toast + beep); rate-limited
   to 3 per minute
+- **Drag & drop** — drag rack tiles onto empty squares (blanks open the letter picker on
+  drop), drag provisional tiles to other squares or back to the rack; the square under
+  your cursor highlights as the drop target. Click-to-place and typing still work
 - **Keyboard input** — click a square and type: letters place matching rack tiles (blanks
   auto-assign), arrows move/rotate the cursor, Backspace undoes, Enter plays, Esc clears
 - **Classic board & bag** — official 15×15 premium layout, 100-tile English distribution,
@@ -58,9 +61,10 @@ What runs where:
 1. **Home** — enter your name, then *Create new game* (you become host) or join with a room code.
 2. **Lobby** — the host tunes the room: seat capacity, turn timer, and word-check mode
    (challenge vs validate). Others see a read-only summary. The host presses *Start game*.
-3. **Game** — click a rack tile then a square, or click a square and type. The action bar
-   shows a live score preview; *Play* commits, *Exchange* swaps selected tiles, *Pass* skips
-   your turn, *⇄* shuffles your rack (display only).
+3. **Game** — drag a rack tile onto the board, or click a tile then a square, or click a
+   square and type. Drag provisional tiles around (or back to the rack) to rearrange your
+   move. The action bar shows a live score preview; *Play* commits, *Exchange* swaps
+   selected tiles, *Pass* skips your turn, *⇄* shuffles your rack (display only).
 4. **Challenges (challenge mode)** — after each committed move, every opponent sees a
    challenge bar (dismissable — a compact chip keeps the option one click away). The window
    stays open until the next player completes *any* action. On success the whole move is

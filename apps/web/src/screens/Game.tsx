@@ -13,6 +13,7 @@ import {
 import { useGameStore, isMyTurn } from '../store/gameStore';
 import { computePreview } from '../preview';
 import { getSocket } from '../socket/client';
+import { copyText } from '../clipboard';
 import { Board } from '../components/Board';
 import { Rack } from '../components/Rack';
 import { ScoreBoard } from '../components/ScoreBoard';
@@ -191,10 +192,11 @@ export function Game() {
         </div>
         <div className="flex items-center gap-2 text-sm text-stone-400">
           <button
-            onClick={() => {
-              navigator.clipboard?.writeText(state.code);
-              toast('code copied', 'good');
-            }}
+            onClick={() =>
+              copyText(state.code).then((ok) =>
+                toast(ok ? 'room code copied!' : 'could not copy', ok ? 'good' : 'bad'),
+              )
+            }
             title="copy room code"
             className="rounded bg-stone-800 px-2 py-1 font-mono font-bold text-amber-300"
           >
