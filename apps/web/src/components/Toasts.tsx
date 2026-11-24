@@ -5,7 +5,7 @@ export function Toasts() {
   const dismissToast = useGameStore((s) => s.dismissToast);
 
   return (
-    <div className="fixed bottom-4 left-1/2 z-40 flex w-full max-w-md -translate-x-1/2 flex-col gap-2 px-4">
+    <div className="fixed bottom-4 left-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col gap-2">
       {toasts.map((t) => (
         <button
           key={t.id}

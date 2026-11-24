@@ -98,6 +98,9 @@ interface GameStore {
   showChallenge: () => void;
 }
 
+const MAX_TOASTS = 3;
+const TOAST_MS = 1000;
+
 let toastSeq = 1;
 
 export const useGameStore = create<GameStore>()((set, get) => ({
@@ -232,8 +235,9 @@ export const useGameStore = create<GameStore>()((set, get) => ({
 
   toast: (text, tone = 'info') => {
     const id = toastSeq++;
-    set((st) => ({ toasts: [...st.toasts, { id, text, tone }] }));
-    setTimeout(() => get().dismissToast(id), 7000);
+    // newest wins: never more than MAX_TOASTS on screen
+    set((st) => ({ toasts: [...st.toasts, { id, text, tone }].slice(-MAX_TOASTS) }));
+    setTimeout(() => get().dismissToast(id), TOAST_MS);
   },
 
   dismissToast: (id) => set((st) => ({ toasts: st.toasts.filter((t) => t.id !== id) })),

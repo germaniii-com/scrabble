@@ -16,6 +16,7 @@ interface MovePayload { placements?: PlacementPayload[] }
 interface ExchangePayload { rackTileIds?: string[] }
 interface RemoveSeatPayload { playerId?: string }
 interface SettingsPayload { settings?: Partial<GameSettings> }
+interface ReadyPayload { ready?: boolean }
 interface ChatPayload { text?: string }
 interface PingPayload { targetIdx?: number }
 
@@ -113,6 +114,16 @@ export function attachGameServer(io: Server, dictionary: Set<string>): void {
       if (!ctx) return;
       try {
         ctx.room.updateSettings(ctx.playerId, data?.settings ?? {});
+      } catch (e) {
+        socket.emit('game:error', { reason: message(e) });
+      }
+    });
+
+    socket.on('lobby:ready', (data: ReadyPayload) => {
+      const ctx = ctxOf();
+      if (!ctx) return;
+      try {
+        ctx.room.setReady(ctx.playerId, data?.ready ?? true);
       } catch (e) {
         socket.emit('game:error', { reason: message(e) });
       }

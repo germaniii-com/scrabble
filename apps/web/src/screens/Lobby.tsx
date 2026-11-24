@@ -20,6 +20,11 @@ export function Lobby() {
   const isHost = state.hostId === myId;
   const settings = state.settings;
   const canStart = state.players.length >= 2;
+  const iAmReady = state.players.find((p) => p.id === myId)?.ready ?? false;
+  // the host seat carries no ready flag — pressing Start is the host's signal
+  const guests = state.players.filter((p) => p.id !== state.hostId);
+  const allGuestsReady = guests.every((p) => p.ready);
+  const readyCount = guests.filter((p) => p.ready).length;
 
   const update = (patch: Partial<GameSettings>) => {
     getSocket().emit('settings:update', { settings: patch });
@@ -28,6 +33,15 @@ export function Lobby() {
   const leave = () => {
     getSocket().emit('game:leave');
     resetToHome();
+  };
+
+  const toggleReady = () => {
+    getSocket().emit('lobby:ready', { ready: !iAmReady });
+  };
+
+  const start = () => {
+    if (!allGuestsReady && !window.confirm('Some players are not ready, start anyway?')) return;
+    getSocket().emit('game:start');
   };
 
   const inviteLink = inviteLinkFor(state.code);
@@ -179,8 +193,15 @@ export function Lobby() {
                   {p.name}
                   {p.id === myId && <span className="ml-2 text-xs text-stone-400">(you)</span>}
                 </span>
-                <span className={`text-xs ${p.connected ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {p.connected ? '● connected' : '○ connecting…'}
+                <span className="flex items-center gap-2 text-xs">
+                  {p.id !== state.hostId && (
+                    <span className={p.ready ? 'text-emerald-400' : 'text-stone-500'}>
+                      {p.ready ? '✓ ready' : 'not ready'}
+                    </span>
+                  )}
+                  <span className={p.connected ? 'text-emerald-400' : 'text-red-400'}>
+                    {p.connected ? '● connected' : '○ connecting…'}
+                  </span>
                 </span>
               </li>
             ))}
@@ -201,17 +222,29 @@ export function Lobby() {
         {isHost ? (
           <button
             disabled={!canStart}
-            onClick={() => getSocket().emit('game:start')}
+            onClick={start}
             className="w-full rounded-xl bg-amber-400 py-4 text-lg font-black text-stone-900 transition hover:bg-amber-300 disabled:opacity-40"
           >
             {canStart
-              ? `Start game (${state.players.length} players)`
+              ? allGuestsReady
+                ? `Start game (${state.players.length} players)`
+                : `Start game (${readyCount}/${guests.length} ready)`
               : 'Waiting for at least 2 players…'}
           </button>
         ) : (
-          <p className="rounded-xl bg-stone-800 py-4 text-center text-stone-400">
-            waiting for the host to start…
-          </p>
+          <div className="space-y-3">
+            <button
+              onClick={toggleReady}
+              className={`w-full rounded-xl py-4 text-lg font-black text-stone-900 transition ${
+                iAmReady ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-amber-400 hover:bg-amber-300'
+              }`}
+            >
+              {iAmReady ? '✓ Ready' : "I'm ready"}
+            </button>
+            <p className="rounded-xl bg-stone-800 py-4 text-center text-stone-400">
+              waiting for the host to start…
+            </p>
+          </div>
         )}
       </div>
     </div>

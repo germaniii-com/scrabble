@@ -56,6 +56,8 @@ interface ServerPlayer {
   rack: RackTile[];
   skipsNextTurn: boolean;
   resigned: boolean;
+  /** lobby-only readiness signal */
+  ready: boolean;
 }
 
 interface PrivateMove {
@@ -121,10 +123,22 @@ export class GameRoom {
       rack: [],
       skipsNextTurn: false,
       resigned: false,
+      ready: false,
     };
+    // the roster changed: everyone else's readiness is no longer meaningful
+    for (const p of this.players) p.ready = false;
     this.players.push(player);
     if (!this.hostId) this.hostId = player.id;
     return player;
+  }
+
+  /** Lobby only: set a player's readiness signal. */
+  setReady(playerId: string, ready: boolean): void {
+    const player = this.players.find((p) => p.id === playerId);
+    if (!player) throw new GameError('not a player in this room');
+    if (this.status !== 'lobby') throw new GameError('the game has already started');
+    player.ready = Boolean(ready);
+    this.emitState();
   }
 
   playerIdx(playerId: string): number {
@@ -200,6 +214,7 @@ export class GameRoom {
       p.rack = this.draw(RACK_SIZE);
       p.skipsNextTurn = false;
       p.resigned = false;
+      p.ready = false;
     }
     this.status = 'playing';
     this.turn = Math.max(0, this.playerIdx(this.hostId));
@@ -395,6 +410,7 @@ export class GameRoom {
       p.rack = this.draw(RACK_SIZE);
       p.skipsNextTurn = false;
       p.resigned = false;
+      p.ready = false;
     }
     this.turn = Math.max(0, this.playerIdx(this.hostId));
     this.moveSeq = 0;
@@ -714,6 +730,7 @@ export class GameRoom {
       tileCount: p.rack.length,
       skipsNextTurn: p.skipsNextTurn,
       resigned: p.resigned,
+      ready: p.ready,
     }));
     const lastMove = this.lastMove
       ? {

@@ -55,6 +55,8 @@ export interface PublicPlayer {
   tileCount: number;
   skipsNextTurn: boolean;
   resigned: boolean;
+  /** lobby-only readiness signal (host seats ignore it — Start is their signal) */
+  ready: boolean;
 }
 
 export type GameStatus = 'lobby' | 'playing' | 'ended';
