@@ -55,12 +55,13 @@ export function Home() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-stone-900 p-4 text-stone-100">
+    <div className="screen-enter flex min-h-screen flex-col items-center justify-center gap-6 bg-stone-900 p-4 text-stone-100">
       <h1 className="text-4xl font-black tracking-tight">
         {'SCRABBLE'.split('').map((ch, i) => (
           <span
             key={i}
-            className={`mx-0.5 inline-block rounded px-2 py-1 text-stone-900 ${
+            style={{ animationDelay: `${i * 70}ms` }}
+            className={`letter-drop mx-0.5 inline-block rounded px-2 py-1 text-stone-900 ${
               i % 2 === 0 ? 'bg-amber-200' : 'bg-amber-400'
             }`}
           >
@@ -72,7 +73,10 @@ export function Home() {
         2–6 players · online · challenge rules{connected ? '' : ' · connecting…'}
       </p>
 
-      <div className="w-full max-w-sm space-y-5 rounded-2xl bg-stone-800 p-6 shadow-xl">
+      <div
+        style={{ animationDelay: '0.3s' }}
+        className="screen-enter w-full max-w-sm space-y-5 rounded-2xl bg-stone-800 p-6 shadow-xl"
+      >
         <label className="block space-y-1">
           <span className="text-xs font-bold uppercase text-stone-400">Your name</span>
           <input
@@ -86,14 +90,14 @@ export function Home() {
             }}
             placeholder="e.g. Carol"
             maxLength={20}
-            className="w-full rounded-lg bg-stone-900 px-3 py-2 text-lg outline-none ring-amber-300 focus:ring-2"
+            className="input w-full px-4 py-2.5 text-lg"
           />
         </label>
 
         <button
           disabled={busy}
           onClick={() => go('game:create', {})}
-          className="w-full rounded-lg bg-amber-400 py-3 font-black text-stone-900 transition hover:bg-amber-300 disabled:opacity-50"
+          className="press w-full rounded-lg bg-amber-400 py-3 font-black text-stone-900 transition hover:bg-amber-300 disabled:opacity-50"
         >
           + Create new game
         </button>
@@ -111,12 +115,12 @@ export function Home() {
               if (e.key === 'Enter') join();
             }}
             placeholder="ROOM CODE"
-            className="w-full rounded-lg bg-stone-900 px-3 py-2 text-center text-2xl font-black tracking-[0.3em] outline-none ring-amber-300 focus:ring-2"
+            className="input w-full px-4 py-3 text-center text-2xl font-black tracking-[0.3em]"
           />
           <button
             disabled={busy || code.length < 4}
             onClick={join}
-            className="w-full rounded-lg bg-stone-700 py-3 font-bold transition hover:bg-stone-600 disabled:opacity-50"
+            className="press w-full rounded-lg bg-stone-700 py-3 font-bold transition hover:bg-stone-600 disabled:opacity-50"
           >
             → Join game
           </button>

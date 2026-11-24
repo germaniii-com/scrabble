@@ -23,6 +23,20 @@ export interface Toast {
   tone: 'info' | 'good' | 'bad';
 }
 
+/** A pending in-app confirmation dialog (replaces window.confirm). */
+export interface ConfirmRequest {
+  id: number;
+  title: string;
+  body?: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  tone: 'default' | 'danger';
+  onResolve: (confirmed: boolean) => void;
+}
+
+export type ConfirmOptions = Omit<ConfirmRequest, 'id' | 'confirmLabel' | 'cancelLabel' | 'tone'> &
+  Partial<Pick<ConfirmRequest, 'confirmLabel' | 'cancelLabel' | 'tone'>>;
+
 export interface ChallengeResolvedPayload {
   moveSeq: number;
   success: boolean;
@@ -60,6 +74,8 @@ interface GameStore {
   dismissedChallengeMoveSeq: number | null;
   /** the last ping event: whose bell is shaking (local echo or received) */
   pingFlash: { fromIdx: number; at: number } | null;
+  /** the open confirmation dialog, if any */
+  confirmReq: ConfirmRequest | null;
 
   setConnected: (connected: boolean) => void;
   setIdentity: (code: string, token: string, myId: string) => void;
@@ -73,6 +89,9 @@ interface GameStore {
   markChatRead: () => void;
   /** shake a player's bell: locally on click, remotely when they ping you */
   markPinged: (fromIdx: number) => void;
+  /** open a confirmation dialog; onResolve fires once it is answered */
+  ask: (opts: ConfirmOptions) => void;
+  resolveConfirm: (confirmed: boolean) => void;
   toast: (text: string, tone?: Toast['tone']) => void;
   dismissToast: (id: number) => void;
 
@@ -103,9 +122,11 @@ interface GameStore {
 }
 
 const MAX_TOASTS = 3;
-const TOAST_MS = 1000;
+/** how long a toast stays on screen — the CSS toast-life animation matches this */
+export const TOAST_MS = 1000;
 
 let toastSeq = 1;
+let confirmSeq = 1;
 
 export const useGameStore = create<GameStore>()((set, get) => ({
   connected: false,
@@ -130,6 +151,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
   chatUnread: 0,
   dismissedChallengeMoveSeq: null,
   pingFlash: null,
+  confirmReq: null,
 
   setConnected: (connected) => set({ connected }),
 
@@ -159,6 +181,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
       chatUnread: 0,
       dismissedChallengeMoveSeq: null,
       pingFlash: null,
+      confirmReq: null,
     });
   },
 
@@ -240,6 +263,26 @@ export const useGameStore = create<GameStore>()((set, get) => ({
   markChatRead: () => set({ chatUnread: 0 }),
 
   markPinged: (fromIdx) => set({ pingFlash: { fromIdx, at: Date.now() } }),
+
+  ask: (opts) => {
+    // a stale question can never linger unanswered
+    get().confirmReq?.onResolve(false);
+    const req: ConfirmRequest = {
+      id: confirmSeq++,
+      confirmLabel: 'Confirm',
+      cancelLabel: 'Cancel',
+      tone: 'default',
+      ...opts,
+    };
+    set({ confirmReq: req });
+  },
+
+  resolveConfirm: (confirmed) => {
+    const req = get().confirmReq;
+    if (!req) return;
+    set({ confirmReq: null });
+    req.onResolve(confirmed);
+  },
 
   toast: (text, tone = 'info') => {
     const id = toastSeq++;

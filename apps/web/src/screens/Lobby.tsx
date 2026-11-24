@@ -16,6 +16,7 @@ export function Lobby() {
   const myId = useGameStore((s) => s.myId);
   const toast = useGameStore((s) => s.toast);
   const resetToHome = useGameStore((s) => s.resetToHome);
+  const ask = useGameStore((s) => s.ask);
 
   const isHost = state.hostId === myId;
   const settings = state.settings;
@@ -40,8 +41,17 @@ export function Lobby() {
   };
 
   const start = () => {
-    if (!allGuestsReady && !window.confirm('Some players are not ready, start anyway?')) return;
-    getSocket().emit('game:start');
+    if (allGuestsReady) {
+      getSocket().emit('game:start');
+      return;
+    }
+    ask({
+      title: 'Some players are not ready, start anyway?',
+      confirmLabel: 'Start anyway',
+      onResolve: (yes) => {
+        if (yes) getSocket().emit('game:start');
+      },
+    });
   };
 
   const inviteLink = inviteLinkFor(state.code);
@@ -59,13 +69,13 @@ export function Lobby() {
   };
 
   return (
-    <div className="min-h-screen bg-stone-900 p-4 text-stone-100">
+    <div className="screen-enter min-h-screen bg-stone-900 p-4 text-stone-100">
       <div className="mx-auto max-w-lg space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-black">Lobby</h1>
           <button
             onClick={leave}
-            className="rounded-lg bg-stone-800 px-4 py-2 text-sm font-bold hover:bg-stone-700"
+            className="press rounded-lg bg-stone-800 px-4 py-2 text-sm font-bold hover:bg-stone-700"
           >
             Leave
           </button>
@@ -76,20 +86,20 @@ export function Lobby() {
           <button
             onClick={copyCode}
             title="click to copy"
-            className="mt-1 text-5xl font-black tracking-[0.25em] text-amber-300 hover:text-amber-200"
+            className="press mt-1 text-5xl font-black tracking-[0.25em] text-amber-300 hover:text-amber-200"
           >
             {state.code}
           </button>
           <div className="mt-3 flex justify-center gap-2 text-sm font-bold">
             <button
               onClick={copyCode}
-              className="rounded-lg bg-stone-700 px-4 py-2 transition hover:bg-stone-600"
+              className="press rounded-lg bg-stone-700 px-4 py-2 transition hover:bg-stone-600"
             >
               Copy code
             </button>
             <button
               onClick={copyInviteLink}
-              className="rounded-lg bg-amber-400 px-4 py-2 text-stone-900 transition hover:bg-amber-300"
+              className="press rounded-lg bg-amber-400 px-4 py-2 text-stone-900 transition hover:bg-amber-300"
             >
               Copy invite link
             </button>
@@ -112,7 +122,7 @@ export function Lobby() {
                 <select
                   value={settings.capacity}
                   onChange={(e) => update({ capacity: Number(e.target.value) })}
-                  className="rounded-lg bg-stone-900 px-3 py-1.5 font-bold outline-none ring-amber-300 focus:ring-2"
+                  className="select px-3 py-2 font-bold"
                 >
                   {CAPACITIES.map((c) => (
                     <option key={c} value={c}>
@@ -133,7 +143,7 @@ export function Lobby() {
                   onChange={(e) =>
                     update({ timerSeconds: e.target.value === 'off' ? null : Number(e.target.value) })
                   }
-                  className="rounded-lg bg-stone-900 px-3 py-1.5 font-bold outline-none ring-amber-300 focus:ring-2"
+                  className="select px-3 py-2 font-bold"
                 >
                   {TIMER_PRESETS.map((t) => (
                     <option key={String(t)} value={t == null ? 'off' : t}>
@@ -183,10 +193,11 @@ export function Lobby() {
             Players ({state.players.length}/{settings.capacity})
           </p>
           <ul className="mt-3 space-y-2">
-            {state.players.map((p) => (
+            {state.players.map((p, idx) => (
               <li
                 key={p.id}
-                className="flex items-center justify-between rounded-lg bg-stone-900 px-3 py-2"
+                style={{ animationDelay: `${idx * 60}ms` }}
+                className="row-in flex items-center justify-between rounded-lg bg-stone-900 px-3 py-2"
               >
                 <span className="font-bold">
                   {p.id === state.hostId && <span title="host">★ </span>}
@@ -223,7 +234,7 @@ export function Lobby() {
           <button
             disabled={!canStart}
             onClick={start}
-            className="w-full rounded-xl bg-amber-400 py-4 text-lg font-black text-stone-900 transition hover:bg-amber-300 disabled:opacity-40"
+            className="press w-full rounded-xl bg-amber-400 py-4 text-lg font-black text-stone-900 transition hover:bg-amber-300 disabled:opacity-40"
           >
             {canStart
               ? allGuestsReady
@@ -234,8 +245,10 @@ export function Lobby() {
         ) : (
           <div className="space-y-3">
             <button
+              // remounting replays the pop when the ready state flips
+              key={iAmReady ? 'ready' : 'not'}
               onClick={toggleReady}
-              className={`w-full rounded-xl py-4 text-lg font-black text-stone-900 transition ${
+              className={`pop-in press w-full rounded-xl py-4 text-lg font-black text-stone-900 transition ${
                 iAmReady ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-amber-400 hover:bg-amber-300'
               }`}
             >

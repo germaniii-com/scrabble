@@ -53,7 +53,7 @@ export function ScoreBoard() {
             <li
               key={p.id}
               className={`flex min-w-max flex-1 items-center justify-between gap-2 rounded-lg px-3 py-1.5 lg:min-w-0 ${
-                isTurn ? 'bg-emerald-600/30 ring-1 ring-emerald-500' : 'bg-stone-900'
+                isTurn ? 'turn-glow bg-emerald-600/30 ring-1 ring-emerald-500' : 'bg-stone-900'
               } ${p.resigned ? 'opacity-40' : ''}`}
             >
               <span className="truncate font-bold">
@@ -83,7 +83,13 @@ export function ScoreBoard() {
                     🔔
                   </button>
                 )}
-                <span className="font-mono font-bold tabular-nums text-amber-300">{p.score}</span>
+                {/* keyed by score: the number pops when it changes */}
+                <span
+                  key={p.score}
+                  className="pop-in font-mono font-bold tabular-nums text-amber-300"
+                >
+                  {p.score}
+                </span>
                 {remaining != null && (
                   <span
                     className={`font-mono text-xs tabular-nums ${

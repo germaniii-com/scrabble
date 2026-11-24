@@ -46,9 +46,9 @@ export function GameOver() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+    <div className="backdrop-in fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       {winner && <Confetti />}
-      <div className="w-full max-w-md rounded-2xl bg-stone-800 p-6 shadow-2xl">
+      <div className="modal-in w-full max-w-md rounded-2xl bg-stone-800 p-6 shadow-2xl">
         <h2 className="text-center text-3xl font-black tracking-widest text-amber-300">GAME OVER</h2>
 
         {winner && (
@@ -70,7 +70,8 @@ export function GameOver() {
             {places.map((p, i) => (
               <li
                 key={p.id}
-                className="flex items-center justify-between rounded-lg bg-stone-900 px-3 py-2"
+                style={{ animationDelay: `${200 + i * 60}ms` }}
+                className="row-in flex items-center justify-between rounded-lg bg-stone-900 px-3 py-2"
               >
                 <span className="truncate">
                   <span className="text-xs font-bold uppercase tracking-wider text-stone-400">
@@ -89,14 +90,14 @@ export function GameOver() {
           {isHost && (
             <button
               onClick={() => getSocket().emit('game:rematch')}
-              className="flex-1 rounded-lg bg-amber-400 py-3 font-black text-stone-900 hover:bg-amber-300"
+              className="press flex-1 rounded-lg bg-amber-400 py-3 font-black text-stone-900 hover:bg-amber-300"
             >
               Rematch (same players)
             </button>
           )}
           <button
             onClick={leave}
-            className="flex-1 rounded-lg bg-stone-700 py-3 font-bold hover:bg-stone-600"
+            className="press flex-1 rounded-lg bg-stone-700 py-3 font-bold hover:bg-stone-600"
           >
             Leave
           </button>

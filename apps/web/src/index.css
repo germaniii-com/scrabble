@@ -50,6 +50,151 @@
   animation: bell-shake 0.7s ease-in-out;
   transform-origin: 50% 15%;
 }
+
+/* ---- UI motion ---- */
+
+/* screens rise in on mount */
+@keyframes screen-enter {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.screen-enter { animation: screen-enter 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Home title letters drop in with a bounce */
+@keyframes letter-drop {
+  0% { opacity: 0; transform: translateY(-48px) rotate(-8deg); }
+  55% { opacity: 1; transform: translateY(5px) rotate(1.5deg); }
+  75% { transform: translateY(-2px) rotate(-0.5deg); }
+  100% { transform: none; }
+}
+.letter-drop { animation: letter-drop 0.55s cubic-bezier(0.3, 1.4, 0.4, 1) both; }
+
+/* list rows fade up */
+@keyframes row-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.row-in { animation: row-in 0.35s ease-out both; }
+
+/* tiles & small elements pop into place */
+@keyframes pop-in {
+  0% { opacity: 0; transform: scale(0.4); }
+  70% { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.pop-in { animation: pop-in 0.28s cubic-bezier(0.3, 1.4, 0.4, 1) both; }
+
+/* toasts: slide in, hold, slide out — duration is set inline to match TOAST_MS */
+@keyframes toast-life {
+  0% { opacity: 0; transform: translateX(-24px); }
+  10%, 84% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateX(-24px); }
+}
+.toast-life { animation: toast-life 1s ease both; }
+
+/* modals: backdrop fades, card springs */
+@keyframes backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+.backdrop-in { animation: backdrop-in 0.25s ease-out both; }
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.9) translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+.modal-in { animation: modal-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* challenge / vote bars drop down from under the header */
+@keyframes bar-in {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: none; }
+}
+.bar-in { animation: bar-in 0.3s ease-out both; }
+
+/* mobile chat drawer slides in from the right */
+@keyframes drawer-in {
+  from { transform: translateX(110%); }
+  to { transform: none; }
+}
+.drawer-in { animation: drawer-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* active player's row breathes softly */
+@keyframes turn-glow {
+  0%, 100% { box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.35); }
+  50% { box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.35), 0 0 14px 0 rgba(16, 185, 129, 0.25); }
+}
+.turn-glow { animation: turn-glow 2.2s ease-in-out infinite; }
+
+/* tactile press for primary buttons */
+.press { transition: transform 0.1s ease; }
+.press:active { transform: scale(0.96); }
+
+/* rack tiles: hover lift */
+.rack-tile { transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease; }
+.rack-tile:hover { transform: translateY(-3px); }
+
+/* accessibility: no motion for those who ask for none */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---- inputs & selects ---- */
+/* dark, bordered, with an amber glow on focus; width/padding stay per instance */
+.input,
+.select {
+  border-radius: 0.75rem;
+  background-color: #1c1917;
+  border: 1px solid #44403c;
+  color: #e7e5e4;
+  caret-color: #fbbf24;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.input::placeholder {
+  color: #78716c;
+}
+
+.input::selection {
+  background: rgba(251, 191, 36, 0.35);
+}
+
+.input:hover,
+.select:hover {
+  border-color: #57534e;
+}
+
+.input:focus,
+.select:focus {
+  outline: none;
+  border-color: #fcd34d;
+  box-shadow: 0 0 0 3px rgba(252, 211, 77, 0.18), 0 0 20px -4px rgba(251, 191, 36, 0.45);
+}
+
+/* dark autofill instead of the browser's white/yellow flash */
+.input:-webkit-autofill,
+.input:-webkit-autofill:hover,
+.input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #1c1917 inset;
+  -webkit-text-fill-color: #e7e5e4;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* selects: drop the native chrome, draw our own amber-tinted chevron */
+.select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.25rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23a8a29e'%3E%3Cpath d='M8 11 3 6h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 0.9rem;
+}
+
+.select option {
+  background-color: #1c1917;
+  color: #e7e5e4;
+}
 .tile-blank {
   font-style: italic;
   text-decoration: underline;

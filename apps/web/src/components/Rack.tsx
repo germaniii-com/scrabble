@@ -48,7 +48,7 @@ function RackTileButton({
       onClick={() =>
         exchangeMode ? onToggleExchange(tile.id) : onSelect(selected ? null : tile.id)
       }
-      className={`relative h-12 w-12 rounded-md bg-gradient-to-b from-amber-100 to-amber-300 font-extrabold text-stone-900 shadow-md transition ${
+      className={`rack-tile pop-in relative h-12 w-12 rounded-md bg-gradient-to-b from-amber-100 to-amber-300 font-extrabold text-stone-900 shadow-md transition ${
         selected ? 'ring-4 ring-emerald-400' : ''
       } ${exchanging ? 'ring-4 ring-red-500' : ''} ${!draggable ? 'opacity-60' : ''} ${
         isDragging ? 'opacity-30' : ''
@@ -135,7 +135,7 @@ export function Rack(props: RackProps) {
             <button
               disabled={!myTurn || !preview?.ok || submitting}
               onClick={props.onPlay}
-              className="rounded-lg bg-emerald-500 px-5 py-2.5 font-black text-stone-900 transition hover:bg-emerald-400 disabled:opacity-40"
+              className="press rounded-lg bg-emerald-500 px-5 py-2.5 font-black text-stone-900 transition hover:bg-emerald-400 disabled:opacity-40"
             >
               {preview?.ok
                 ? `Play ${preview.words.map((w) => w.text).join(' + ')}  +${preview.points}`
@@ -144,14 +144,14 @@ export function Rack(props: RackProps) {
             <button
               disabled={!myTurn || bagCount === 0}
               onClick={props.onToggleExchange}
-              className="rounded-lg bg-stone-700 px-4 py-2.5 font-bold hover:bg-stone-600 disabled:opacity-40"
+              className="press rounded-lg bg-stone-700 px-4 py-2.5 font-bold hover:bg-stone-600 disabled:opacity-40"
             >
               Exchange
             </button>
             <button
               disabled={!myTurn}
               onClick={props.onPass}
-              className="rounded-lg bg-stone-700 px-4 py-2.5 font-bold hover:bg-stone-600 disabled:opacity-40"
+              className="press rounded-lg bg-stone-700 px-4 py-2.5 font-bold hover:bg-stone-600 disabled:opacity-40"
             >
               Pass
             </button>
@@ -165,13 +165,13 @@ export function Rack(props: RackProps) {
             <button
               disabled={exchangeIds.length === 0 || bagCount < exchangeIds.length}
               onClick={props.onConfirmExchange}
-              className="rounded-lg bg-emerald-500 px-4 py-2.5 font-black text-stone-900 hover:bg-emerald-400 disabled:opacity-40"
+              className="press rounded-lg bg-emerald-500 px-4 py-2.5 font-black text-stone-900 hover:bg-emerald-400 disabled:opacity-40"
             >
               Confirm exchange
             </button>
             <button
               onClick={props.onCancelExchange}
-              className="rounded-lg bg-stone-700 px-4 py-2.5 font-bold hover:bg-stone-600"
+              className="press rounded-lg bg-stone-700 px-4 py-2.5 font-bold hover:bg-stone-600"
             >
               Cancel
             </button>

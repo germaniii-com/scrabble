@@ -6,6 +6,7 @@ import { Lobby } from './screens/Lobby';
 import { Game } from './screens/Game';
 import { GameOver } from './screens/GameOver';
 import { Toasts } from './components/Toasts';
+import { ConfirmModal } from './components/ConfirmModal';
 
 export function App() {
   const code = useGameStore((s) => s.code);
@@ -21,6 +22,7 @@ export function App() {
       <>
         <Home />
         <Toasts />
+        <ConfirmModal />
       </>
     );
   }
@@ -30,6 +32,7 @@ export function App() {
       {state.status === 'lobby' ? <Lobby /> : <Game />}
       {state.status === 'ended' && <GameOver />}
       <Toasts />
+      <ConfirmModal />
       {!connected && (
         <div className="fixed left-1/2 top-2 z-40 -translate-x-1/2 rounded bg-red-600 px-3 py-1 text-sm font-bold">
           disconnected — reconnecting…

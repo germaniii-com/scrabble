@@ -120,7 +120,7 @@ export function ChatPanel({ embedded }: ChatPanelProps) {
               value={text}
               onChange={(e) => setText(e.target.value.slice(0, 200))}
               placeholder="message…"
-              className="min-w-0 flex-1 rounded-lg bg-stone-900 px-3 py-2 text-sm outline-none ring-amber-300 focus:ring-2"
+              className="input min-w-0 flex-1 px-3 py-2 text-sm"
             />
             <button
               type="submit"
@@ -145,7 +145,7 @@ export function ChatPanel({ embedded }: ChatPanelProps) {
               value={word}
               onChange={(e) => setWord(e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 20))}
               placeholder="QUIXOTIC…"
-              className="min-w-0 flex-1 rounded-lg bg-stone-900 px-3 py-2 text-center font-black tracking-widest outline-none ring-amber-300 focus:ring-2"
+              className="input min-w-0 flex-1 px-3 py-2 text-center font-black tracking-widest"
             />
             <button
               type="submit"

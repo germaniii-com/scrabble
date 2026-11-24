@@ -38,6 +38,7 @@ export function Game() {
   const clearExchange = useGameStore((s) => s.clearExchange);
   const setSubmitting = useGameStore((s) => s.setSubmitting);
   const resetToHome = useGameStore((s) => s.resetToHome);
+  const ask = useGameStore((s) => s.ask);
   const toast = useGameStore((s) => s.toast);
 
   const myTurn = isMyTurn(state, myId);
@@ -57,17 +58,29 @@ export function Game() {
   };
 
   const pass = () => {
-    if (window.confirm('Pass your turn?')) {
-      clearExchange();
-      getSocket().emit('turn:pass');
-    }
+    ask({
+      title: 'Pass your turn?',
+      confirmLabel: 'Pass',
+      onResolve: (yes) => {
+        if (!yes) return;
+        clearExchange();
+        getSocket().emit('turn:pass');
+      },
+    });
   };
 
   const resign = () => {
-    if (window.confirm('Resign the game? Your tiles leave play and your score stands.')) {
-      getSocket().emit('game:leave');
-      resetToHome();
-    }
+    ask({
+      title: 'Resign the game?',
+      body: 'Your tiles leave play and your score stands.',
+      confirmLabel: 'Resign',
+      tone: 'danger',
+      onResolve: (yes) => {
+        if (!yes) return;
+        getSocket().emit('game:leave');
+        resetToHome();
+      },
+    });
   };
 
   const confirmExchange = () => {
@@ -136,6 +149,7 @@ export function Game() {
       const st = useGameStore.getState();
       const s = st.state;
       if (!s || s.status !== 'playing' || !isMyTurn(s, st.myId)) return;
+      if (st.confirmReq) return; // a dialog question is open — no board input
 
       if (/^[a-zA-Z]$/.test(e.key)) {
         st.typeLetter(e.key.toUpperCase());
@@ -177,7 +191,7 @@ export function Game() {
   }, []);
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-stone-900 text-stone-100">
+    <div className="screen-enter flex h-screen flex-col overflow-hidden bg-stone-900 text-stone-100">
       <header className="mx-auto flex w-full shrink-0 flex-wrap items-center justify-between gap-2 px-4 py-3 lg:max-w-[85rem]">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-black tracking-tight">
@@ -290,7 +304,7 @@ export function Game() {
             className="fixed inset-0 z-30 bg-black/50 lg:hidden"
             onClick={() => setChatOpen(false)}
           />
-          <div className="fixed inset-y-2 right-2 z-40 flex w-80 max-w-[85vw] lg:hidden">
+          <div className="drawer-in fixed inset-y-2 right-2 z-40 flex w-80 max-w-[85vw] lg:hidden">
             <div className="w-full">
               <ChatPanel embedded={false} />
             </div>

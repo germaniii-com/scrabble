@@ -15,7 +15,7 @@ function ProvisionalTile({ prov, draggable }: { prov: ProvTile; draggable: boole
       ref={setNodeRef}
       {...listeners}
       style={{ touchAction: 'none' }}
-      className={`tile tile-prov ${prov.isBlank ? 'tile-blank' : ''} ${isDragging ? 'opacity-30' : ''}`}
+      className={`tile tile-prov pop-in ${prov.isBlank ? 'tile-blank' : ''} ${isDragging ? 'opacity-30' : ''}`}
     >
       {prov.letter}
       {!prov.isBlank && <span className="tile-value">{letterValue(prov.letter)}</span>}
@@ -50,14 +50,14 @@ function Square({ row, col, cell, prov, myTurn, isCursor, cursorVertical, onSqua
       onClick={() => onSquareClick(row, col)}
     >
       {cell ? (
-        <span className={`tile ${cell.isBlank ? 'tile-blank' : ''}`}>
+        <span className={`tile pop-in ${cell.isBlank ? 'tile-blank' : ''}`}>
           {cell.letter}
           {!cell.isBlank && <span className="tile-value">{letterValue(cell.letter)}</span>}
         </span>
       ) : prov ? (
         <ProvisionalTile prov={prov} draggable={myTurn} />
       ) : isCursor ? (
-        <span className="pointer-events-none font-black text-amber-700">
+        <span className="pointer-events-none animate-pulse font-black text-amber-700">
           {cursorVertical ? '↓' : '→'}
         </span>
       ) : isCenter ? (

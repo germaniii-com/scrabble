@@ -39,7 +39,7 @@ export function ChallengeBar() {
 
   return (
     <div
-      className={`shrink-0 rounded-xl p-4 shadow-lg ${
+      className={`bar-in shrink-0 rounded-xl p-4 shadow-lg ${
         isMover ? 'bg-stone-800' : 'bg-gradient-to-r from-red-900 to-red-700 ring-2 ring-red-400'
       }`}
     >

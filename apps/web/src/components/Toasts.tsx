@@ -1,4 +1,4 @@
-import { useGameStore } from '../store/gameStore';
+import { useGameStore, TOAST_MS } from '../store/gameStore';
 
 export function Toasts() {
   const toasts = useGameStore((s) => s.toasts);
@@ -10,7 +10,8 @@ export function Toasts() {
         <button
           key={t.id}
           onClick={() => dismissToast(t.id)}
-          className={`rounded-lg px-4 py-2 text-left text-sm font-bold text-white shadow-lg ${
+          style={{ animationDuration: `${TOAST_MS}ms` }}
+          className={`toast-life rounded-lg px-4 py-2 text-left text-sm font-bold text-white shadow-lg ${
             t.tone === 'good' ? 'bg-emerald-600' : t.tone === 'bad' ? 'bg-red-600' : 'bg-stone-700'
           }`}
         >
