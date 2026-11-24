@@ -5,6 +5,9 @@ authoritative Socket.IO server, and a shared TypeScript rules engine.
 
 - **Rooms & seats** — create a game, share the 4-letter code; the host configures the
   room (seat capacity 2–6) before starting
+- **Kicks** — in the lobby the host can remove anyone (one confirmation); mid-game
+  anyone may open a vote-to-kick — a majority of the other active players removes
+  the target (tiles leave play, score stands, the seat cannot rejoin)
 - **Game settings (host, in lobby)** — seat capacity · turn timer (30/60/90/120s or off) ·
   word check mode:
   - **challenge** — classic rules: no dictionary check when you play; opponents may challenge
@@ -13,7 +16,9 @@ authoritative Socket.IO server, and a shared TypeScript rules engine.
   - **validate** — the server dictionary-checks every formed word when you commit; invalid
     words bounce back with the list; no challenges at all
 - **Turn timer with vote-to-skip** — expiry never forces anything: the player may still act,
-  while the others get a "vote to skip" prompt (majority of other active players forces a pass)
+  while the others get a "vote to skip" prompt (majority of other active players forces a pass).
+  An offline player's turn can be voted past the same way — no timer needed, so a disconnect
+  never stalls the game
 - **In-game chat** — player messages in a right-hand panel (drawer on mobile), replayed on
   reconnect, survives rematch
 - **Pings** — bell icon beside any opponent's name nudges them (toast + beep); rate-limited
@@ -60,7 +65,8 @@ What runs where:
 
 1. **Home** — enter your name, then *Create new game* (you become host) or join with a room code.
 2. **Lobby** — the host tunes the room: seat capacity, turn timer, and word-check mode
-   (challenge vs validate). Others see a read-only summary. The host presses *Start game*.
+   (challenge vs validate). Others see a read-only summary. The host can also ✕ kick
+   anyone from the room (with a confirmation). The host presses *Start game*.
 3. **Game** — drag a rack tile onto the board, or click a tile then a square, or click a
    square and type. Drag provisional tiles around (or back to the rack) to rearrange your
    move. The action bar shows a live score preview; *Play* commits, *Exchange* swaps
@@ -72,9 +78,13 @@ What runs where:
    challenger loses their next turn.
 5. **Timer (if enabled)** — a countdown appears next to the current player. When it hits
    zero the turn is *not* forced: the player can still act, while the others get a
-   "vote to skip" prompt. A majority of the other active players skips the turn.
-6. **Chat & pings** — the chat panel on the right (💬 in the header on small screens);
-   the 🔔 next to a name nudges that player (max 3 per minute).
+   "vote to skip" prompt. A majority of the other active players skips the turn. If the
+   current player is *offline*, anyone can open the same vote immediately — no timer
+   required — so a dropped player never stalls the game.
+6. **Chat, pings & kicks** — the chat panel on the right (💬 in the header on small
+   screens); the 🔔 next to a name nudges that player (max 3 per minute); the ✕ next
+   to a name starts a vote to kick them (needs at least 3 active players — a majority
+   of the others must agree; the kicked player's tiles leave play, score stands).
 7. **Game over** — when the bag is empty and someone plays out their rack, after two full
    rounds of passes, or when only one player remains. Final rack values are applied
    (finisher gains the sum of active opponents' tiles). The host can rematch with the

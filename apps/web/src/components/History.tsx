@@ -6,6 +6,7 @@ const ICON: Record<MoveRecordPublic['kind'], string> = {
   exchange: '⇄',
   pass: '↷',
   resign: '✕',
+  kick: '🚪',
   skip: '⤼',
   challenge: '⚔',
   timeout: '⏱',
@@ -16,6 +17,7 @@ const TONE: Record<MoveRecordPublic['kind'], string> = {
   exchange: 'text-sky-300',
   pass: 'text-stone-400',
   resign: 'text-stone-500',
+  kick: 'text-red-300',
   skip: 'text-orange-300',
   challenge: 'text-red-300',
   timeout: 'text-orange-300',
@@ -31,10 +33,14 @@ function describe(record: MoveRecordPublic, name: string): string {
       return `${name} passed`;
     case 'resign':
       return `${name} resigned`;
+    case 'kick':
+      return `${name} was kicked out by vote`;
     case 'skip':
       return `${name} lost their turn (failed challenge)`;
     case 'timeout':
-      return `${name}'s turn timed out — skipped by vote`;
+      return record.note === 'offline'
+        ? `${name} was offline — turn skipped by vote`
+        : `${name}'s turn timed out — skipped by vote`;
     case 'challenge':
       return record.note === 'success'
         ? `${name} challenged — SUCCESS: ${(record.invalidWords ?? []).join(', ')} not in the dictionary`

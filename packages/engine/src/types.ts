@@ -65,7 +65,7 @@ export type EndReason = 'playout' | 'passout' | 'resignation';
 export interface MoveRecordPublic {
   seq: number;
   playerIdx: number;
-  kind: 'move' | 'exchange' | 'pass' | 'resign' | 'skip' | 'challenge' | 'timeout';
+  kind: 'move' | 'exchange' | 'pass' | 'resign' | 'kick' | 'skip' | 'challenge' | 'timeout';
   /** for kind === 'move' */
   words?: { text: string; points: number }[];
   points?: number;
@@ -106,9 +106,20 @@ export interface ChatMessage {
   ts: number;
 }
 
-/** Open vote to skip an overdue turn (created when the timer expires). */
+/** Open vote to skip an overdue turn. Opened by timer expiry or — no timer
+ *  needed — when the current player is offline and the turn would stall. */
 export interface SkipVote {
   targetIdx: number;
+  /** what opened the vote */
+  reason: 'timeout' | 'offline';
+  voters: number[];
+}
+
+/** Open in-game vote to kick a player out of the room (started by any player). */
+export interface KickVote {
+  targetIdx: number;
+  /** who started the vote (also its first voter) */
+  initiatorIdx: number;
   voters: number[];
 }
 
@@ -131,4 +142,5 @@ export interface PublicGameState {
   /** epoch ms when the current turn's timer expires; null = untimed / not playing */
   turnEndsAt: number | null;
   skipVote: SkipVote | null;
+  kickVote: KickVote | null;
 }

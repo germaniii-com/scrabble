@@ -23,6 +23,7 @@ export function ScoreBoard() {
   const myId = useGameStore((s) => s.myId);
   const pingFlash = useGameStore((s) => s.pingFlash);
   const markPinged = useGameStore((s) => s.markPinged);
+  const ask = useGameStore((s) => s.ask);
   const now = useNow(state.status === 'playing' && state.turnEndsAt != null);
 
   const activeScores = state.players.filter((p) => !p.resigned).map((p) => p.score);
@@ -32,6 +33,19 @@ export function ScoreBoard() {
   const ping = (i: number) => {
     markPinged(i); // shake the bell immediately on click
     getSocket().emit('ping:send', { targetIdx: i });
+  };
+
+  // in-game: any player may open a kick vote against an opponent (confirmed first)
+  const startKickVote = (i: number, name: string) => {
+    ask({
+      title: `Start a vote to kick ${name}?`,
+      body: 'A majority of the other active players must agree. Their tiles leave play and their score stands.',
+      confirmLabel: 'Start vote',
+      tone: 'danger',
+      onResolve: (yes) => {
+        if (yes) getSocket().emit('kick:start', { targetIdx: i });
+      },
+    });
   };
 
   return (
@@ -47,6 +61,8 @@ export function ScoreBoard() {
           const isTurn = state.status === 'playing' && state.turn === i;
           const leader = crowned && !p.resigned && p.score === topScore;
           const canPing = p.id !== myId && p.connected && !p.resigned;
+          // hidden while a kick vote is open — the vote bar takes over then
+          const canKick = state.status === 'playing' && p.id !== myId && !p.resigned && !state.kickVote;
           const remaining = isTurn && state.turnEndsAt != null ? state.turnEndsAt - now : null;
           const urgent = remaining != null && remaining <= 10_000;
           return (
@@ -70,6 +86,15 @@ export function ScoreBoard() {
                 )}
               </span>
               <span className="flex items-center gap-1.5">
+                {canKick && (
+                  <button
+                    onClick={() => startKickVote(i, p.name)}
+                    title={`start a vote to kick ${p.name}`}
+                    className="rounded px-1 text-xs text-stone-400 transition hover:bg-stone-700 hover:text-red-300"
+                  >
+                    ✕
+                  </button>
+                )}
                 {canPing && (
                   <button
                     // remounting replays the shake animation for every new ping

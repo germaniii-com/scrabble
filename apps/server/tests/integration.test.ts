@@ -188,7 +188,8 @@ describe('server integration', () => {
     const synced = await emitAck(bob2, 'sync:request', { code, token: bobToken });
     expect(synced.ok).toBe(true);
     await waitFor(() => (stateOf(alice)?.players[1].connected === true ? true : undefined));
-    expect(last.get(bob2)?.rack.length).toBe(7);
+    // bob2's own snapshot can land a network tick after alice's — probe it too
+    await waitFor(() => (last.get(bob2)?.rack.length === 7 ? true : undefined));
     // the reconnecting player gets the chat history replayed
     await waitFor(() => (chatLogSeen.length > 0 ? true : undefined));
     expect(chatLogSeen.some((m) => m.text === 'good luck all!')).toBe(true);
@@ -196,5 +197,125 @@ describe('server integration', () => {
     // alice can also re-sync (idempotent)
     const resynced = await emitAck(alice, 'sync:request', { code, token: aliceToken });
     expect(resynced.ok).toBe(true);
+  });
+
+  it('kick: host removes a lobby seat; in-game a vote removes a player', async () => {
+    const host = await connect();
+    const created = await emitAck(host, 'game:create', { name: 'Host' });
+    expect(created.ok).toBe(true);
+    const code = created.code as string;
+
+    const guest = await connect();
+    const guestJoin = await emitAck(guest, 'game:join', { code, name: 'Guest' });
+    const third = await connect();
+    const thirdJoin = await emitAck(third, 'game:join', { code, name: 'Third' });
+    expect(guestJoin.ok).toBe(true);
+    expect(thirdJoin.ok).toBe(true);
+    await waitFor(() => (stateOf(host)?.players.length === 3 ? true : undefined));
+
+    // ---- lobby: only the host can kick ----
+    const guestErrors: string[] = [];
+    guest.on('game:error', (p: { reason: string }) => guestErrors.push(p.reason));
+    guest.emit('lobby:kick', { playerId: created.playerId as string }); // guest tries the host
+    await waitFor(() => (guestErrors.length > 0 ? true : undefined));
+    expect(guestErrors[0]).toMatch(/only the host/);
+
+    // the host kicks Guest: they are told, removed, and their socket goes quiet
+    const kickedIds: string[] = [];
+    guest.on('player:kicked', (p: { playerId: string }) => kickedIds.push(p.playerId));
+    host.emit('lobby:kick', { playerId: guestJoin.playerId as string });
+    await waitFor(() => (kickedIds.length > 0 ? true : undefined));
+    expect(kickedIds).toEqual([guestJoin.playerId as string]);
+    await waitFor(() => (stateOf(host)?.players.length === 2 ? true : undefined));
+
+    // a later state change must not reach the detached socket
+    expect(stateOf(guest)?.moveSeq).toBe(0);
+    host.emit('settings:update', { settings: { capacity: 5 } });
+    await waitFor(() => (stateOf(host)?.settings.capacity === 5 ? true : undefined));
+    expect(stateOf(guest)?.moveSeq).toBe(0);
+
+    // ---- in-game: vote to kick ----
+    const fourth = await connect();
+    const fourthJoin = await emitAck(fourth, 'game:join', { code, name: 'Fourth' });
+    expect(fourthJoin.ok).toBe(true);
+    await waitFor(() => (stateOf(host)?.players.length === 3 ? true : undefined));
+    host.emit('game:start');
+    await waitFor(() => (stateOf(host)?.status === 'playing' ? true : undefined));
+
+    // Third (idx 1) opens a vote against Fourth (idx 2); the initiator is voter #1
+    third.emit('kick:start', { targetIdx: 2 });
+    await waitFor(() => (stateOf(host)?.kickVote?.targetIdx === 2 ? true : undefined));
+    expect(stateOf(host)?.kickVote?.voters).toEqual([1]);
+
+    // the target cannot vote on their own kick
+    const fourthErrors: string[] = [];
+    fourth.on('game:error', (p: { reason: string }) => fourthErrors.push(p.reason));
+    fourth.emit('kick:vote');
+    await waitFor(() => (fourthErrors.length > 0 ? true : undefined));
+    expect(fourthErrors[0]).toMatch(/own kick/);
+
+    // Host's vote reaches the majority (2 of the 2 other active players)
+    const fourthKicked: string[] = [];
+    fourth.on('player:kicked', (p: { playerId: string }) => fourthKicked.push(p.playerId));
+    host.emit('kick:vote');
+    await waitFor(() => (fourthKicked.length > 0 ? true : undefined));
+    expect(fourthKicked).toEqual([fourthJoin.playerId as string]);
+    await waitFor(() => (stateOf(host)?.players[2].resigned === true ? true : undefined));
+    const s = stateOf(host)!;
+    expect(s.kickVote).toBeNull();
+    expect(s.history[s.history.length - 1]?.kind).toBe('kick');
+    expect(s.players[2].tileCount).toBe(0); // tiles leave play
+
+    // the kicked player's socket is detached: no further state reaches them
+    const frozenSeq = stateOf(fourth)?.moveSeq;
+    host.emit('turn:pass');
+    await waitFor(() => (stateOf(host)?.moveSeq === frozenSeq! + 1 ? true : undefined));
+    expect(stateOf(fourth)?.moveSeq).toBe(frozenSeq);
+    expect(stateOf(fourth)?.players[2].resigned).toBe(false); // their view stopped before the kick
+
+    // their token no longer re-seats them
+    const resync = await emitAck(fourth, 'sync:request', {
+      code,
+      token: fourthJoin.token as string,
+    });
+    expect(resync.ok).toBe(false);
+    expect(resync.reason).toMatch(/kicked/);
+  });
+
+  it('an offline current player can be voted past without a timer', async () => {
+    const a = await connect();
+    const created = await emitAck(a, 'game:create', { name: 'A' });
+    expect(created.ok).toBe(true);
+    const code = created.code as string;
+    const b = await connect();
+    const c = await connect();
+    await emitAck(b, 'game:join', { code, name: 'B' });
+    await emitAck(c, 'game:join', { code, name: 'C' });
+    await waitFor(() => (stateOf(a)?.players.length === 3 ? true : undefined));
+    a.emit('game:start');
+    await waitFor(() => (stateOf(b)?.status === 'playing' ? true : undefined));
+    expect(stateOf(b)?.turn).toBe(0);
+    expect(stateOf(b)?.turnEndsAt).toBeNull(); // untimed game
+
+    // A's turn; A drops — without a timer the game would be stuck here
+    a.disconnect();
+    await waitFor(() => (stateOf(b)?.players[0].connected === false ? true : undefined));
+
+    // B opens a skip vote; the state shows the offline reason and B's vote
+    b.emit('turn:openSkipVote');
+    await waitFor(() => (stateOf(c)?.skipVote?.reason === 'offline' ? true : undefined));
+    expect(stateOf(c)?.skipVote?.voters).toEqual([1]);
+
+    // C's vote reaches the majority (2 of the 2 other active players)
+    c.emit('turn:voteSkip');
+    await waitFor(() => (stateOf(b)?.turn === 1 ? true : undefined));
+    const s = stateOf(b)!;
+    expect(s.skipVote).toBeNull();
+    expect(s.history[s.history.length - 1]?.kind).toBe('timeout');
+    expect(s.history[s.history.length - 1]?.note).toBe('offline');
+
+    // the game flows again
+    b.emit('turn:pass');
+    await waitFor(() => (stateOf(b)?.turn === 2 ? true : undefined));
   });
 });

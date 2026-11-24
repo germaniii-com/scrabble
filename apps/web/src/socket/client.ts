@@ -92,6 +92,19 @@ function bind(socket: Socket): void {
     const who = state?.players.find((p) => p.id === playerId)?.name ?? 'a player';
     store.getState().toast(`${who} left`);
   });
+
+  socket.on('player:kicked', ({ playerId }: { playerId: string }) => {
+    const st = store.getState();
+    if (st.myId && playerId === st.myId) {
+      st.resetToHome();
+      st.toast('you were kicked from the room', 'bad');
+      return;
+    }
+    // not seated anymore (e.g. a late duplicate broadcast after our own reset)
+    if (!st.state) return;
+    const who = st.state.players.find((p) => p.id === playerId)?.name ?? 'a player';
+    st.toast(`${who} was kicked`, 'bad');
+  });
 }
 
 /**
@@ -102,24 +115,24 @@ function bind(socket: Socket): void {
 function resume(socket: Socket): void {
   const st = useGameStore.getState();
   if (st.myId && st.code && st.token) {
-    socket.emit('sync:request', { code: st.code, token: st.token }, (res: { ok?: boolean }) => {
+    socket.emit('sync:request', { code: st.code, token: st.token }, (res: { ok?: boolean; reason?: string }) => {
       if (!res?.ok) {
         useGameStore.getState().resetToHome();
-        useGameStore.getState().toast('you are no longer in a room');
+        useGameStore.getState().toast(res.reason || 'you are no longer in a room', 'bad');
       }
     });
     return;
   }
   const saved = loadRoom();
   if (!saved) return;
-  socket.emit('sync:request', saved, (res: { ok?: boolean; playerId?: string }) => {
+  socket.emit('sync:request', saved, (res: { ok?: boolean; playerId?: string; reason?: string }) => {
     const s = useGameStore.getState();
     if (res?.ok && res.playerId) {
       s.setIdentity(saved.code, saved.token, res.playerId);
     } else {
       clearRoom();
       s.resetToHome();
-      s.toast('your previous room is gone (the server may have restarted)', 'bad');
+      s.toast(res.reason || 'your previous room is gone (the server may have restarted)', 'bad');
     }
   });
 }

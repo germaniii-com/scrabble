@@ -21,6 +21,7 @@ import { ChallengeBar } from '../components/ChallengeBar';
 import { History } from '../components/History';
 import { ChatPanel } from '../components/ChatPanel';
 import { VoteBar } from '../components/VoteBar';
+import { KickVoteBar } from '../components/KickVoteBar';
 import { BlankPicker } from '../components/BlankPicker';
 import { TileFace } from '../components/TileFace';
 
@@ -262,6 +263,7 @@ export function Game() {
             collisionDetection={pointerWithin as CollisionDetection}
           >
             <VoteBar />
+            <KickVoteBar />
             <ChallengeBar />
             <div className="flex min-h-0 flex-1 items-center justify-center">
               <Board />

@@ -18,6 +18,7 @@ import {
   type EndReason,
   type GameSettings,
   type GameStatus,
+  type KickVote,
   type MoveRecordPublic,
   type NewTile,
   type PublicGameState,
@@ -56,6 +57,8 @@ interface ServerPlayer {
   rack: RackTile[];
   skipsNextTurn: boolean;
   resigned: boolean;
+  /** set when removed via a kick (lobby or vote): the seat can no longer reattach */
+  kicked: boolean;
   /** lobby-only readiness signal */
   ready: boolean;
 }
@@ -97,6 +100,7 @@ export class GameRoom {
   settings: GameSettings = { ...DEFAULT_SETTINGS };
   turnEndsAt: number | null = null;
   skipVote: SkipVote | null = null;
+  kickVote: KickVote | null = null;
   chatLog: ChatMessage[] = [];
   private chatTimes = new Map<string, number>();
   private pingLog = new Map<string, number[]>();
@@ -123,6 +127,7 @@ export class GameRoom {
       rack: [],
       skipsNextTurn: false,
       resigned: false,
+      kicked: false,
       ready: false,
     };
     // the roster changed: everyone else's readiness is no longer meaningful
@@ -158,15 +163,22 @@ export class GameRoom {
 
   /** Mid-game leave: tiles leave play (NOT back to the bag), score stands. */
   resign(playerId: string): void {
-    const i = this.playerIdx(playerId);
+    this.leavePlay(this.playerIdx(playerId), 'resign');
+  }
+
+  /** Shared exit path for resignation and vote-kick. */
+  private leavePlay(i: number, kind: 'resign' | 'kick'): void {
     if (i < 0) return;
     const player = this.players[i];
     if (player.resigned) return;
     player.resigned = true;
+    if (kind === 'kick') player.kicked = true;
     player.skipsNextTurn = false;
     player.rack = [];
+    // the target leaving resolves any kick vote against them
+    if (this.kickVote?.targetIdx === i) this.kickVote = null;
     this.moveSeq += 1;
-    this.history.push({ seq: this.moveSeq, playerIdx: i, kind: 'resign' });
+    this.history.push({ seq: this.moveSeq, playerIdx: i, kind });
     if (this.status !== 'playing') {
       this.emitState();
       return;
@@ -178,6 +190,45 @@ export class GameRoom {
     } else {
       this.emitState();
     }
+    // a shrinking roster can push already-cast votes over the recomputed majority
+    this.resolveKickVoteIfDue();
+    this.resolveSkipVoteIfDue();
+  }
+
+  /**
+   * Executed after any seat leaves: the kick threshold is a majority of the
+   * *remaining* active players, so a resignation may make pending votes
+   * decisive on its own — resolve the kick instead of leaving a dead vote.
+   */
+  private resolveKickVoteIfDue(): void {
+    const vote = this.kickVote;
+    if (!vote || this.status !== 'playing') return;
+    const activeOthers = this.players.filter(
+      (p, i) => i !== vote.targetIdx && !p.resigned,
+    ).length;
+    if (vote.voters.length < Math.floor(activeOthers / 2) + 1) return;
+    const targetIdx = vote.targetIdx;
+    this.kickVote = null;
+    const kickedId = this.players[targetIdx].id;
+    // reach the kicked socket while it is still in the room's socket list —
+    // the events layer detaches it right after this call returns
+    this.emitter.toRoom('player:kicked', { playerId: kickedId });
+    this.leavePlay(targetIdx, 'kick');
+  }
+
+  /**
+   * Host-only lobby kick: the seat is removed immediately (the client shows a
+   * confirmation before calling this). In-game removals go through voteKick.
+   */
+  kick(hostId: string, targetId: string): void {
+    this.assertHost(hostId);
+    if (this.status !== 'lobby') throw new GameError('direct kicks are lobby-only');
+    const i = this.playerIdx(targetId);
+    if (i < 0) throw new GameError('no such player');
+    if (targetId === this.hostId) throw new GameError('the host cannot be kicked');
+    const player = this.players.splice(i, 1)[0];
+    this.emitter.toRoom('player:kicked', { playerId: player.id });
+    this.emitState();
   }
 
   /** Host removes a disconnected seat after the grace period (or any lobby seat). */
@@ -218,6 +269,7 @@ export class GameRoom {
     }
     this.status = 'playing';
     this.turn = Math.max(0, this.playerIdx(this.hostId));
+    this.kickVote = null;
     this.scheduleTurnTimer();
     this.emitState();
   }
@@ -236,11 +288,16 @@ export class GameRoom {
 
   reattach(token: string, socketId: string): ServerPlayer | null {
     const player = this.players.find((p) => p.token === token);
-    if (!player) return null;
+    if (!player || player.kicked) return null;
     player.socketId = socketId;
     player.connected = true;
     player.disconnectedAt = 0;
     return player;
+  }
+
+  /** True when the token belongs to a seat that was kicked out of the room. */
+  kickedByToken(token: string): boolean {
+    return this.players.some((p) => p.token === token && p.kicked);
   }
 
   /* ------------------------------ settings ------------------------------ */
@@ -347,8 +404,63 @@ export class GameRoom {
   private onTurnExpired(targetIdx: number): void {
     if (this.status !== 'playing' || this.turn !== targetIdx) return;
     if (this.skipVote) return;
-    this.skipVote = { targetIdx, voters: [] };
+    this.skipVote = { targetIdx, reason: 'timeout', voters: [] };
     this.emitState();
+  }
+
+  /**
+   * Open a vote to skip the current turn while that player is offline — no
+   * timer required, since an absent player would otherwise stall the game.
+   * The initiator is the first voter; with a single other active player the
+   * majority is reached immediately. The vote closes as usual if the player
+   * returns and acts, or when a majority forms.
+   */
+  startSkipVote(playerId: string): void {
+    if (this.status !== 'playing' || this.turn < 0) throw new GameError('game not in progress');
+    if (this.skipVote) {
+      this.emitState(); // already open (timer expiry or a racing click) — idempotent
+      return;
+    }
+    const initiatorIdx = this.playerIdx(playerId);
+    if (initiatorIdx < 0) throw new GameError('not a player in this room');
+    if (initiatorIdx === this.turn) throw new GameError('you cannot vote to skip your own turn');
+    const initiator = this.players[initiatorIdx];
+    if (initiator.resigned) throw new GameError('resigned players cannot vote');
+    const target = this.players[this.turn];
+    if (target.connected) throw new GameError('that player is still online');
+    this.skipVote = { targetIdx: this.turn, reason: 'offline', voters: [initiatorIdx] };
+    if (!this.resolveSkipVoteIfDue()) this.emitState();
+  }
+
+  /**
+   * Resolve an open skip vote once its votes reach a majority of the other
+   * active players: force-pass the turn (scoreless, closes the challenge
+   * window) and re-arm the next turn's timer. Re-checked whenever a seat
+   * leaves — a shrinking roster lowers the threshold.
+   */
+  private resolveSkipVoteIfDue(): boolean {
+    const vote = this.skipVote;
+    if (!vote || this.status !== 'playing') return false;
+    const activeOthers = this.players.filter(
+      (p, i) => i !== vote.targetIdx && !p.resigned,
+    ).length;
+    const needed = Math.floor(activeOthers / 2) + 1;
+    if (vote.voters.length < needed) return false;
+    const targetIdx = vote.targetIdx;
+    this.skipVote = null;
+    this.challenge = null; // a forced pass is a turn action: closes the window
+    this.moveSeq += 1;
+    this.history.push({
+      seq: this.moveSeq,
+      playerIdx: targetIdx,
+      kind: 'timeout',
+      note: vote.reason === 'offline' ? 'offline' : 'skipped by vote',
+    });
+    this.passStreak += 1;
+    if (this.maybePassout()) return true; // finish() already emitted the final state
+    this.advanceTurn();
+    this.emitState();
+    return true;
   }
 
   /**
@@ -371,28 +483,59 @@ export class GameRoom {
       return; // one vote each — idempotent
     }
     vote.voters.push(voterIdx);
+    if (!this.resolveSkipVoteIfDue()) this.emitState(); // no majority yet — show the vote
+  }
 
-    const activeOthers = this.players.filter(
-      (p, i) => i !== vote.targetIdx && !p.resigned,
-    ).length;
-    const needed = Math.floor(activeOthers / 2) + 1;
+  /* ------------------------------ kick vote ------------------------------ */
 
-    if (vote.voters.length >= needed) {
-      const targetIdx = vote.targetIdx;
-      this.skipVote = null;
-      this.challenge = null; // a forced pass is a turn action: closes the window
-      this.moveSeq += 1;
-      this.history.push({
-        seq: this.moveSeq,
-        playerIdx: targetIdx,
-        kind: 'timeout',
-        note: 'skipped by vote',
-      });
-      this.passStreak += 1;
-      if (this.maybePassout()) return;
-      this.advanceTurn();
+  /**
+   * Start a vote to kick another player. Any active player may start one; the
+   * initiator is its first voter. Requires at least three active players —
+   * with only two there is nobody left to vote. One kick vote at a time.
+   */
+  startKickVote(playerId: string, targetIdx: number): void {
+    if (this.status !== 'playing') throw new GameError('game not in progress');
+    if (this.kickVote) throw new GameError('a kick vote is already open');
+    const initiatorIdx = this.playerIdx(playerId);
+    if (initiatorIdx < 0) throw new GameError('not a player in this room');
+    if (!Number.isInteger(targetIdx) || targetIdx < 0 || targetIdx >= this.players.length) {
+      throw new GameError('no such player');
     }
+    if (initiatorIdx === targetIdx) throw new GameError('you cannot kick yourself');
+    const target = this.players[targetIdx];
+    if (target.resigned) throw new GameError('that player has already left the game');
+    if (this.players[initiatorIdx].resigned) {
+      throw new GameError('resigned players cannot start a kick vote');
+    }
+    const active = this.players.filter((p) => !p.resigned).length;
+    if (active < 3) throw new GameError('kick votes need at least 3 active players');
+    this.kickVote = { targetIdx, initiatorIdx, voters: [initiatorIdx] };
     this.emitState();
+  }
+
+  /**
+   * Vote on the open kick. Threshold: majority of other active players
+   * (disconnected players count toward the denominator but cannot vote).
+   * Reaching it removes the target like a resignation — tiles leave play,
+   * the score stands, the seat can no longer reattach.
+   */
+  voteKick(playerId: string): void {
+    if (this.status !== 'playing') throw new GameError('game not in progress');
+    const vote = this.kickVote;
+    if (!vote) throw new GameError('nothing to vote on right now');
+    const voterIdx = this.playerIdx(playerId);
+    if (voterIdx < 0) throw new GameError('not a player in this room');
+    if (voterIdx === vote.targetIdx) throw new GameError('you cannot vote on your own kick');
+    const voter = this.players[voterIdx];
+    if (voter.resigned) throw new GameError('resigned players cannot vote');
+    if (vote.voters.includes(voterIdx)) {
+      this.emitState();
+      return; // one vote each — idempotent
+    }
+    vote.voters.push(voterIdx);
+    // reaching the majority executes the kick (leavePlay emits the new state)
+    this.resolveKickVoteIfDue();
+    if (this.kickVote === vote) this.emitState(); // no majority yet — show the vote
   }
 
   /* ------------------------------ game flow ------------------------------ */
@@ -421,6 +564,7 @@ export class GameRoom {
     this.winner = null;
     this.endReason = null;
     this.status = 'playing';
+    this.kickVote = null;
     this.scheduleTurnTimer();
     this.emitState();
   }
@@ -654,6 +798,7 @@ export class GameRoom {
     this.clearTurnTimer();
     this.turnEndsAt = null;
     this.skipVote = null;
+    this.kickVote = null;
     if (forcedWinner !== undefined) {
       this.winner = forcedWinner;
     } else {
@@ -758,13 +903,16 @@ export class GameRoom {
       settings: this.settings,
       turnEndsAt: this.status === 'playing' ? this.turnEndsAt : null,
       skipVote: this.skipVote,
+      kickVote: this.kickVote,
     };
   }
 
   emitState(): void {
     const state = this.publicState();
     for (const p of this.players) {
-      if (!p.socketId || !p.connected) continue;
+      // kicked players may briefly still have a live socket — never send them
+      // state (their client has already been sent home via player:kicked)
+      if (!p.socketId || !p.connected || p.kicked) continue;
       this.emitter.toSocket(p.socketId, 'game:state', { state, rack: p.rack });
     }
   }

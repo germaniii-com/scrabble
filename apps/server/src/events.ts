@@ -15,6 +15,7 @@ interface SyncPayload { code?: string; token?: string }
 interface MovePayload { placements?: PlacementPayload[] }
 interface ExchangePayload { rackTileIds?: string[] }
 interface RemoveSeatPayload { playerId?: string }
+interface KickStartPayload { targetIdx?: number }
 interface SettingsPayload { settings?: Partial<GameSettings> }
 interface ReadyPayload { ready?: boolean }
 interface ChatPayload { text?: string }
@@ -47,6 +48,12 @@ export function attachGameServer(io: Server, dictionary: Set<string>): void {
     toRoom: (event, payload) => io.to(code).emit(event, payload),
     toSocket: (socketId, event, payload) => io.to(socketId).emit(event, payload),
   });
+
+  /** Forget a socket's seat and pull it out of the room's broadcast list. */
+  const detach = (socketId: string, code: string): void => {
+    sockets.delete(socketId);
+    io.sockets.sockets.get(socketId)?.leave(code);
+  };
 
   io.on('connection', (socket) => {
     const ctxOf = (): SocketCtx | undefined => sockets.get(socket.id);
@@ -90,7 +97,10 @@ export function attachGameServer(io: Server, dictionary: Set<string>): void {
       if (!room) return ack?.({ ok: false, reason: 'room not found' });
       const player = room.reattach(token, socket.id);
       if (!player) {
-        return ack?.({ ok: false, reason: 'seat not found — the server may have restarted' });
+        const reason = room.kickedByToken(token)
+          ? 'you were kicked from that room'
+          : 'seat not found — the server may have restarted';
+        return ack?.({ ok: false, reason });
       }
       sockets.set(socket.id, { room, playerId: player.id });
       socket.join(room.code);
@@ -166,11 +176,62 @@ export function attachGameServer(io: Server, dictionary: Set<string>): void {
       }
     });
 
+    // open a skip vote while the current player is offline (no timer needed)
+    socket.on('turn:openSkipVote', () => {
+      const ctx = ctxOf();
+      if (!ctx) return;
+      try {
+        ctx.room.startSkipVote(ctx.playerId);
+      } catch (e) {
+        socket.emit('game:error', { reason: message(e) });
+      }
+    });
+
     socket.on('turn:voteSkip', () => {
       const ctx = ctxOf();
       if (!ctx) return;
       try {
         ctx.room.voteSkip(ctx.playerId);
+      } catch (e) {
+        socket.emit('game:error', { reason: message(e) });
+      }
+    });
+
+    // host-only lobby kick (the client confirms before emitting)
+    socket.on('lobby:kick', (data: RemoveSeatPayload) => {
+      const ctx = ctxOf();
+      if (!ctx || !data?.playerId) return;
+      // read the socket before the kick removes the player from the roster
+      const target = ctx.room.players.find((p) => p.id === data.playerId);
+      try {
+        ctx.room.kick(ctx.playerId, data.playerId);
+        if (target?.socketId) detach(target.socketId, ctx.room.code);
+      } catch (e) {
+        socket.emit('game:error', { reason: message(e) });
+      }
+    });
+
+    // in-game: open a vote to kick another player
+    socket.on('kick:start', (data: KickStartPayload) => {
+      const ctx = ctxOf();
+      if (!ctx) return;
+      try {
+        ctx.room.startKickVote(ctx.playerId, data?.targetIdx ?? -1);
+      } catch (e) {
+        socket.emit('game:error', { reason: message(e) });
+      }
+    });
+
+    // in-game: cast a vote on the open kick
+    socket.on('kick:vote', () => {
+      const ctx = ctxOf();
+      if (!ctx) return;
+      // capture the target before voting: on success their socket must be detached
+      const vote = ctx.room.kickVote;
+      const target = vote ? ctx.room.players[vote.targetIdx] : undefined;
+      try {
+        ctx.room.voteKick(ctx.playerId);
+        if (target?.kicked && target.socketId) detach(target.socketId, ctx.room.code);
       } catch (e) {
         socket.emit('game:error', { reason: message(e) });
       }

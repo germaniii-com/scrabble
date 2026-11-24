@@ -1,4 +1,4 @@
-import type { GameSettings } from '@scrabble/engine';
+import type { GameSettings, PublicPlayer } from '@scrabble/engine';
 import { TIMER_PRESETS } from '@scrabble/engine';
 import { useGameStore } from '../store/gameStore';
 import { getSocket } from '../socket/client';
@@ -50,6 +50,19 @@ export function Lobby() {
       confirmLabel: 'Start anyway',
       onResolve: (yes) => {
         if (yes) getSocket().emit('game:start');
+      },
+    });
+  };
+
+  // host-only: remove someone from the room (confirmed before it takes effect)
+  const kick = (p: PublicPlayer) => {
+    ask({
+      title: `Kick ${p.name}?`,
+      body: 'They are removed from the room immediately and sent back to the home screen.',
+      confirmLabel: 'Kick',
+      tone: 'danger',
+      onResolve: (yes) => {
+        if (yes) getSocket().emit('lobby:kick', { playerId: p.id });
       },
     });
   };
@@ -213,6 +226,15 @@ export function Lobby() {
                   <span className={p.connected ? 'text-emerald-400' : 'text-red-400'}>
                     {p.connected ? '● connected' : '○ connecting…'}
                   </span>
+                  {isHost && p.id !== state.hostId && (
+                    <button
+                      onClick={() => kick(p)}
+                      title={`kick ${p.name} from the room`}
+                      className="press rounded px-1.5 py-0.5 font-bold text-red-400 transition hover:bg-red-500/20 hover:text-red-300"
+                    >
+                      ✕ kick
+                    </button>
+                  )}
                 </span>
               </li>
             ))}
