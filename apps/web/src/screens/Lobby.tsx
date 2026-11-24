@@ -3,6 +3,7 @@ import { TIMER_PRESETS } from '@scrabble/engine';
 import { useGameStore } from '../store/gameStore';
 import { getSocket } from '../socket/client';
 import { copyText } from '../clipboard';
+import { inviteLinkFor } from '../invite';
 
 const CAPACITIES = [2, 3, 4, 5, 6];
 
@@ -29,9 +30,17 @@ export function Lobby() {
     resetToHome();
   };
 
+  const inviteLink = inviteLinkFor(state.code);
+
   const copyCode = () => {
     copyText(state.code).then((ok) =>
       toast(ok ? 'room code copied!' : 'could not copy', ok ? 'good' : 'bad'),
+    );
+  };
+
+  const copyInviteLink = () => {
+    copyText(inviteLink).then((ok) =>
+      toast(ok ? 'invite link copied!' : 'could not copy', ok ? 'good' : 'bad'),
     );
   };
 
@@ -57,8 +66,25 @@ export function Lobby() {
           >
             {state.code}
           </button>
-          <p className="mt-2 text-sm text-stone-400">
-            click the code to copy it — share with up to {settings.capacity - 1} friends
+          <div className="mt-3 flex justify-center gap-2 text-sm font-bold">
+            <button
+              onClick={copyCode}
+              className="rounded-lg bg-stone-700 px-4 py-2 transition hover:bg-stone-600"
+            >
+              Copy code
+            </button>
+            <button
+              onClick={copyInviteLink}
+              className="rounded-lg bg-amber-400 px-4 py-2 text-stone-900 transition hover:bg-amber-300"
+            >
+              Copy invite link
+            </button>
+          </div>
+          <p className="mt-3 truncate text-xs text-stone-500" title={inviteLink}>
+            {inviteLink}
+          </p>
+          <p className="mt-1 text-sm text-stone-400">
+            share with up to {settings.capacity - 1} friends — the code is prefilled for them
           </p>
         </div>
 
