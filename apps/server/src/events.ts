@@ -19,6 +19,7 @@ interface SettingsPayload { settings?: Partial<GameSettings> }
 interface ReadyPayload { ready?: boolean }
 interface ChatPayload { text?: string }
 interface PingPayload { targetIdx?: number }
+interface WordCheckPayload { word?: string }
 
 interface SocketCtx {
   room: GameRoom;
@@ -127,6 +128,16 @@ export function attachGameServer(io: Server, dictionary: Set<string>): void {
       } catch (e) {
         socket.emit('game:error', { reason: message(e) });
       }
+    });
+
+    // dictionary lookup — open to any connected socket, no room required
+    socket.on('word:check', (data: WordCheckPayload, ack?: Ack) => {
+      const word = (data?.word ?? '').trim().toUpperCase();
+      if (!/^[A-Z]{1,20}$/.test(word)) {
+        ack?.({ ok: false, reason: 'letters only (A–Z)' });
+        return;
+      }
+      ack?.({ ok: true, word, valid: dictionary.has(word) });
     });
 
     socket.on('chat:send', (data: ChatPayload) => {

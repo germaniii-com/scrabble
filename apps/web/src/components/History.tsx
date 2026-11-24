@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react';
 import type { MoveRecordPublic } from '@scrabble/engine';
 import { useGameStore } from '../store/gameStore';
 
@@ -47,22 +46,13 @@ function describe(record: MoveRecordPublic, name: string): string {
 
 export function History() {
   const state = useGameStore((s) => s.state)!;
-  const records = [...state.history].slice(-50);
-  const listRef = useRef<HTMLUListElement>(null);
-
-  // newest at the bottom, always in view
-  useEffect(() => {
-    const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [records.length]);
+  // newest at the top, capped at the last 50 records
+  const records = [...state.history].slice(-50).reverse();
 
   return (
     <div className="flex min-h-0 flex-1 flex-col rounded-2xl bg-stone-800 p-4 shadow">
       <p className="shrink-0 text-xs font-bold uppercase tracking-widest text-stone-400">History</p>
-      <ul
-        ref={listRef}
-        className="mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1 text-sm max-h-72 lg:max-h-none"
-      >
+      <ul className="mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1 text-sm max-h-72 lg:max-h-none">
         {records.length === 0 && <li className="text-stone-500">no moves yet</li>}
         {records.map((r) => {
           const challengeable = !!state.challenge?.open && r.seq === state.challenge.moveSeq;

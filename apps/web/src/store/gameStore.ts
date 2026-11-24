@@ -58,6 +58,8 @@ interface GameStore {
   chatUnread: number;
   /** challenge banner dismissed for this moveSeq (personal; the window stays open) */
   dismissedChallengeMoveSeq: number | null;
+  /** the last ping event: whose bell is shaking (local echo or received) */
+  pingFlash: { fromIdx: number; at: number } | null;
 
   setConnected: (connected: boolean) => void;
   setIdentity: (code: string, token: string, myId: string) => void;
@@ -69,6 +71,8 @@ interface GameStore {
   onChatLog: (msgs: ChatMessage[]) => void;
   setChatOpen: (open: boolean) => void;
   markChatRead: () => void;
+  /** shake a player's bell: locally on click, remotely when they ping you */
+  markPinged: (fromIdx: number) => void;
   toast: (text: string, tone?: Toast['tone']) => void;
   dismissToast: (id: number) => void;
 
@@ -125,6 +129,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
   chatOpen: false,
   chatUnread: 0,
   dismissedChallengeMoveSeq: null,
+  pingFlash: null,
 
   setConnected: (connected) => set({ connected }),
 
@@ -153,6 +158,7 @@ export const useGameStore = create<GameStore>()((set, get) => ({
       chatOpen: false,
       chatUnread: 0,
       dismissedChallengeMoveSeq: null,
+      pingFlash: null,
     });
   },
 
@@ -232,6 +238,8 @@ export const useGameStore = create<GameStore>()((set, get) => ({
   setChatOpen: (open) => set(open ? { chatOpen: true, chatUnread: 0 } : { chatOpen: false }),
 
   markChatRead: () => set({ chatUnread: 0 }),
+
+  markPinged: (fromIdx) => set({ pingFlash: { fromIdx, at: Date.now() } }),
 
   toast: (text, tone = 'info') => {
     const id = toastSeq++;

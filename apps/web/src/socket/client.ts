@@ -50,6 +50,7 @@ function bind(socket: Socket): void {
 
   socket.on('ping:received', ({ fromIdx, name }: { fromIdx: number; name: string }) => {
     playPing();
+    store.getState().markPinged(fromIdx);
     store.getState().toast(`🔔 ${name} pinged you!`, 'info');
   });
 

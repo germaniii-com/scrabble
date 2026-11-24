@@ -21,11 +21,18 @@ function formatClock(remainingMs: number): string {
 export function ScoreBoard() {
   const state = useGameStore((s) => s.state)!;
   const myId = useGameStore((s) => s.myId);
+  const pingFlash = useGameStore((s) => s.pingFlash);
+  const markPinged = useGameStore((s) => s.markPinged);
   const now = useNow(state.status === 'playing' && state.turnEndsAt != null);
 
   const activeScores = state.players.filter((p) => !p.resigned).map((p) => p.score);
   const topScore = activeScores.length > 0 ? Math.max(...activeScores) : 0;
   const crowned = topScore > 0;
+
+  const ping = (i: number) => {
+    markPinged(i); // shake the bell immediately on click
+    getSocket().emit('ping:send', { targetIdx: i });
+  };
 
   return (
     <div className="shrink-0 rounded-2xl bg-stone-800 p-4 shadow">
@@ -65,9 +72,13 @@ export function ScoreBoard() {
               <span className="flex items-center gap-1.5">
                 {canPing && (
                   <button
-                    onClick={() => getSocket().emit('ping:send', { targetIdx: i })}
-                    title={`ping ${p.name}`}
-                    className="rounded px-1 text-xs text-stone-400 transition hover:bg-stone-700 hover:text-amber-300"
+                    // remounting replays the shake animation for every new ping
+                    key={pingFlash?.fromIdx === i ? `bell-${pingFlash.at}` : 'bell'}
+                    onClick={() => ping(i)}
+                    title={`ping ${p.name} (max 3 per minute)`}
+                    className={`rounded px-1 text-xs text-stone-400 transition hover:bg-stone-700 hover:text-amber-300 ${
+                      pingFlash?.fromIdx === i ? 'bell-shake' : ''
+                    }`}
                   >
                     🔔
                   </button>
